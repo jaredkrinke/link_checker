@@ -56,10 +56,25 @@ Deno.test("Valid links", async () => {
         "style.css": ``,
         "other.html": `<html></html>`,
         "image.png": ``,
-});
+    });
 
     const expected = toMap({
         "index.html": ["style.css", "other.html", "image.png"],
+        "other.html": [],
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Mututal links", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="other.html">link</a></body></html>`,
+        "other.html": `<html><body><a href="index.html">link</a></body></html>`,
+    });
+
+    const expected = toMap({
+        "index.html": ["other.html"],
+        "other.html": ["index.html"],
     });
 
     assertEquals(actual, expected);

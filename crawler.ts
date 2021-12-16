@@ -34,6 +34,7 @@ interface CrawlContext {
     loader: Loader;
     base: URL;
     graph: SiteGraph;
+    queuedURLs: Set<string>;
     workItems: CrawlWorkItem[];
 }
 
@@ -42,11 +43,29 @@ interface CrawlResource {
     internal: boolean;
 }
 
-const tagToLinkAttribute: { [tagName:string]: string } = {
-    a: "href",
-    link: "href",
-    img: "src",
+const tagToLinkInfo: { [tagName:string]: { attribute: string, recurse?: boolean } } = {
+    a: { attribute: "href", recurse: true },
+    link: { attribute: "href" },
+    img: { attribute: "src" },
 };
+
+// TODO: Don't require extensions for non-file URLs (and ideally use content type)
+const htmlURLPattern = /\.html?$/;
+
+function enqueueURLIfNeeded(url: URL, context: CrawlContext): void {
+    const href = url.href;
+    if (!context.queuedURLs.has(href) && htmlURLPattern.test(href)) {
+        context.queuedURLs.add(href);
+        context.workItems.push({
+            resource: {
+                url,
+                internal: true, // TODO: Not always!
+            },
+            fileType: FileType.html,
+            flags: CrawlWorkItemFlags.crawlInternalLinks,
+        });
+    }
+}
 
 async function processWorkItem(item: CrawlWorkItem, context: CrawlContext): Promise<void> {
     const source = item.resource.url;
@@ -55,12 +74,14 @@ async function processWorkItem(item: CrawlWorkItem, context: CrawlContext): Prom
     for (const token of Parser.parse(sourceHTML)) {
         switch (token.type) {
             case 'open': {
-                const attributeName = tagToLinkAttribute[token.name];
-                if (attributeName) {
-                    const href = token.attributes[attributeName];
+                const linkInfo = tagToLinkInfo[token.name];
+                if (linkInfo) {
+                    const href = token.attributes[linkInfo.attribute];
                     const target = new URL(href, source);
                     links.add(target.href);
-                    // TODO: Decide whether or not to crawl
+                    if (linkInfo.recurse) {
+                        enqueueURLIfNeeded(target, context);
+                    }
                 }
             }
             break;
@@ -81,17 +102,11 @@ export class Crawler {
             loader: this.loader,
             base,
             graph: new Map(),
+            queuedURLs: new Set(),
             workItems: [],
         };
 
-        context.workItems.push({
-            resource: {
-                url,
-                internal: true,
-            },
-            fileType: FileType.html,
-            flags: CrawlWorkItemFlags.crawlInternalLinks,
-        });
+        enqueueURLIfNeeded(url, context);
 
         const maxConcurrency = 1;
         const processor = pooledMap(maxConcurrency, context.workItems, (item) => processWorkItem(item, context));
