@@ -1,13 +1,17 @@
 import { Parser } from "https://deno.land/x/event_driven_html_parser@4.0.2/parser.ts";
 import { pooledMap } from "https://deno.land/std@0.115.1/async/pool.ts"
-// import { toFileUrl } from "https://deno.land/std@0.115.1/path/mod.ts"
 
 export interface Loader {
     getContentTypeAsync: (url: URL) => Promise<string>;
     readTextAsync: (url: URL) => Promise<string>;
 }
 
-export type SiteGraph = Map<string, Set<string>>;
+export interface ResourceInfo {
+    contentType?: string;
+    links?: Set<string>;
+}
+
+export type ResourceCollection = Map<string, ResourceInfo>;
 
 export class CrawlError extends Error {
     constructor(message: string) {
@@ -26,22 +30,16 @@ enum ResourceType {
 interface Resource {
     type: ResourceType;
     url?: URL;
+    contentType?: string;
     links?: Set<string>;
 }
 
-// enum CrawlWorkItemFlags {
-//     none = 0,
-//     crawlInternalLinks = 1 << 1,
-// }
-
 interface WorkItem {
     href: string;
-    // flags: CrawlWorkItemFlags;
 }
 
 interface Context {
     loader: Loader;
-    base: URL;
     resources: Map<string, Resource>;
     workItems: WorkItem[];
     parseErrors: Map<string, string>;
@@ -84,8 +82,8 @@ async function processWorkItem(item: WorkItem, context: Context): Promise<void> 
         const { loader } = context;
         const source = resource.url;
         try {
-            const contentType = await loader.getContentTypeAsync(source);
-            resource.type = htmlContentTypePattern.test(contentType) ? ResourceType.html : ResourceType.unknown;
+            resource.contentType = await loader.getContentTypeAsync(source);
+            resource.type = htmlContentTypePattern.test(resource.contentType) ? ResourceType.html : ResourceType.unknown;
         } catch (_error) {
             resource.type = ResourceType.missing;
         }
@@ -128,12 +126,9 @@ export class Crawler {
     constructor(private loader: Loader) {
     }
 
-    async crawlAsync(url: URL): Promise<SiteGraph> {
-        const base = new URL(url.href.substring(0, url.href.lastIndexOf("/")));
-
+    async crawlAsync(url: URL): Promise<ResourceCollection> {
         const context: Context = {
             loader: this.loader,
-            base,
             resources: new Map(),
             workItems: [],
             parseErrors: new Map(),
@@ -141,15 +136,22 @@ export class Crawler {
 
         enqueueURLIfNeeded(url, context);
 
+        // Process resources
         const maxConcurrency = 1;
         const processor = pooledMap(maxConcurrency, context.workItems, (item) => processWorkItem(item, context));
         for await (const _void of processor) {
             // TODO: Events
         }
 
-        return new Map(Array.from(context.resources.entries())
-            .filter(([href, resource]) => resource.links)
-            .map(([href, resource]) => ([href, resource.links ?? new Set()]))
-        );
+        const collection: ResourceCollection = new Map();
+        for (const [key, value] of context.resources.entries()) {
+            const { contentType, links } = value;
+            collection.set(key, {
+                contentType,
+                ...links ? { links } : {},
+            });
+        }
+
+        return collection;
     }
 }
