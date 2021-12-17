@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.115.1/testing/asserts.ts";
-import { Crawler, ResourceCollection, ResourceInfo } from "../crawler.ts";
+import { CrawlOptions, Crawler, ResourceCollection, ResourceInfo } from "../crawler.ts";
 
 const htmlType = "text/html";
 const otherType = "application/octet-stream";
@@ -35,7 +35,7 @@ function toMap(o: { [path: string]: string[] | true | false }): ResourceCollecti
     return collection;
 }
 
-async function crawl(files: { [path: string]: string }, entry = "index.html"): Promise<ResourceCollection> {
+async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry = "index.html"): Promise<ResourceCollection> {
     const crawler = new Crawler({
         getContentTypeAsync: (url: URL) => {
             const path = fromFileURL(url);
@@ -49,7 +49,7 @@ async function crawl(files: { [path: string]: string }, entry = "index.html"): P
         readTextAsync: (url: URL) => Promise.resolve(files[fromFileURL(url)]),
     });
 
-    return await crawler.crawlAsync(toFileURL(entry));
+    return await crawler.crawlAsync(toFileURL(entry), options);
 }
 
 Deno.test("No links", async () => {
@@ -148,6 +148,32 @@ Deno.test("External links should be ignored by default", async () => {
 
     const expected = toMap({
         "index.html": ["http://www.schemescape.com/"],
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Parent directory links are considered external by default", async () => {
+    const actual = await crawl({
+        "base/index.html": `<html><body><a href="../index.html">link</a></body></html>`,
+    }, {}, "base/index.html");
+
+    const expected = toMap({
+        "base/index.html": ["index.html"],
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Base override can cause parent directory to be considered internal", async () => {
+    const actual = await crawl({
+        "index.html": `<html></html>`,
+        "base/index.html": `<html><body><a href="../index.html">link</a></body></html>`,
+    }, { base: toFileURL(".") }, "base/index.html");
+
+    const expected = toMap({
+        "base/index.html": ["index.html"],
+        "index.html": [],
     });
 
     assertEquals(actual, expected);

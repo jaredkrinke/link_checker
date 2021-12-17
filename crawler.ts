@@ -5,6 +5,10 @@ export interface Loader {
     readTextAsync: (url: URL) => Promise<string>;
 }
 
+export interface CrawlOptions {
+    base?: URL;
+}
+
 export interface ResourceInfo {
     contentType?: string;
     links?: Set<string>;
@@ -72,7 +76,7 @@ function enqueueURLIfNeeded(url: URL, context: Context): void {
 }
 
 const htmlContentTypePattern = /^text\/html(;.*)?$/
-async function processWorkItem(item: WorkItem, context: Context): Promise<void> {
+async function processWorkItemAsync(item: WorkItem, context: Context): Promise<void> {
     const resource = context.resources.get(item.href);
     assert(resource, "Attempted to process unknown href");
     assert(resource.url, "Attempted to process undefined URL")
@@ -129,11 +133,11 @@ export class Crawler {
     constructor(private loader: Loader) {
     }
 
-    async crawlAsync(url: URL): Promise<ResourceCollection> {
+    async crawlAsync(url: URL, options?: CrawlOptions): Promise<ResourceCollection> {
         const urlString = url.href;
         const context: Context = {
             loader: this.loader,
-            base: urlString.substring(0, urlString.lastIndexOf("/") + 1),
+            base: options?.base?.href ?? urlString.substring(0, urlString.lastIndexOf("/") + 1),
             resources: new Map(),
             workItems: [],
             parseErrors: new Map(),
@@ -143,7 +147,7 @@ export class Crawler {
 
         // Process resources
         for (const item of context.workItems) {
-            await processWorkItem(item, context);
+            await processWorkItemAsync(item, context);
         }
 
         const collection: ResourceCollection = new Map();
