@@ -3,92 +3,125 @@ import { pooledMap } from "https://deno.land/std@0.115.1/async/pool.ts"
 // import { toFileUrl } from "https://deno.land/std@0.115.1/path/mod.ts"
 
 export interface Loader {
-    loadAsync: (url: URL) => Promise<string>;
+    getContentTypeAsync: (url: URL) => Promise<string>;
+    readTextAsync: (url: URL) => Promise<string>;
 }
 
 export type SiteGraph = Map<string, Set<string>>;
 
-export class InvalidLinkError extends Error {
-    constructor(link: string) {
-        super(`Invalid link encountered: ${link}`);
+export class CrawlError extends Error {
+    constructor(message: string) {
+        super(message);
     }
 }
 
-enum FileType {
-    other,
-    html,
+enum ResourceType {
+    unknown,    // Initial state (i.e. has not been checked yet)
+    html,       // HTML (i.e. crawl-able)
+    other,      // Not HTML (i.e. not crawl-able)
+    invalid,    // Syntactically invalid href
+    missing,    // Broken link
 }
 
-enum CrawlWorkItemFlags {
-    none = 0,
-    crawlInternalLinks = 1 << 1,
+interface Resource {
+    type: ResourceType;
+    url?: URL;
+    links?: Set<string>;
 }
 
-interface CrawlWorkItem {
-    resource: CrawlResource;
-    fileType: FileType;
-    flags: CrawlWorkItemFlags;
+// enum CrawlWorkItemFlags {
+//     none = 0,
+//     crawlInternalLinks = 1 << 1,
+// }
+
+interface WorkItem {
+    href: string;
+    // flags: CrawlWorkItemFlags;
 }
 
-interface CrawlContext {
+interface Context {
     loader: Loader;
     base: URL;
-    graph: SiteGraph;
-    queuedURLs: Set<string>;
-    workItems: CrawlWorkItem[];
+    resources: Map<string, Resource>;
+    workItems: WorkItem[];
+    parseErrors: Map<string, string>;
 }
 
-interface CrawlResource {
-    url: URL;
-    internal: boolean;
-}
-
-const tagToLinkInfo: { [tagName:string]: { attribute: string, recurse?: boolean } } = {
-    a: { attribute: "href", recurse: true },
-    link: { attribute: "href" },
-    img: { attribute: "src" },
+const tagToLinkAttributeName: { [tagName:string]: string } = {
+    a: "href",
+    link: "href",
+    img: "src",
 };
 
-// TODO: Don't require extensions for non-file URLs (and ideally use content type)
-const htmlURLPattern = /\.html?$/;
-
-function enqueueURLIfNeeded(url: URL, context: CrawlContext): void {
-    const href = url.href;
-    if (!context.queuedURLs.has(href) && htmlURLPattern.test(href)) {
-        context.queuedURLs.add(href);
-        context.workItems.push({
-            resource: {
-                url,
-                internal: true, // TODO: Not always!
-            },
-            fileType: FileType.html,
-            flags: CrawlWorkItemFlags.crawlInternalLinks,
-        });
+// deno-lint-ignore no-explicit-any
+function assert(condition: any, message: string): asserts condition {
+    if (!condition) {
+        throw new CrawlError(`Internal error: ${message}`);
     }
 }
 
-async function processWorkItem(item: CrawlWorkItem, context: CrawlContext): Promise<void> {
-    const source = item.resource.url;
-    const sourceHTML = await context.loader.loadAsync(source);
-    const links = new Set<string>();
-    for (const token of Parser.parse(sourceHTML)) {
-        switch (token.type) {
-            case 'open': {
-                const linkInfo = tagToLinkInfo[token.name];
-                if (linkInfo) {
-                    const href = token.attributes[linkInfo.attribute];
-                    const target = new URL(href, source);
-                    links.add(target.href);
-                    if (linkInfo.recurse) {
-                        enqueueURLIfNeeded(target, context);
+function enqueueURLIfNeeded(url: URL, context: Context): void {
+    const { resources } = context;
+    const { href } = url;
+
+    if (!resources.has(href)) {
+        resources.set(href, {
+            type: ResourceType.unknown,
+            url,
+        });
+        context.workItems.push({ href });
+    }
+}
+
+const htmlContentTypePattern = /^text\/html(;.*)?$/
+async function processWorkItem(item: WorkItem, context: Context): Promise<void> {
+    const resource = context.resources.get(item.href);
+    assert(resource, "Attempted to process unknown href");
+    assert(resource.url, "Attempted to process undefined URL")
+
+    try {
+        // Ensure the item exists and check its content type
+        const { loader } = context;
+        const source = resource.url;
+        try {
+            const contentType = await loader.getContentTypeAsync(source);
+            resource.type = htmlContentTypePattern.test(contentType) ? ResourceType.html : ResourceType.unknown;
+        } catch (_error) {
+            resource.type = ResourceType.missing;
+        }
+
+        // Follow links to HTML files
+        // TODO: Only follow internal links!
+        if (resource.type === ResourceType.html) {
+            let sourceHTML;
+            try {
+                sourceHTML = await context.loader.readTextAsync(source);
+            } catch (_error) {
+                resource.type = ResourceType.missing;
+            }
+
+            if (sourceHTML !== undefined) {
+                const links = new Set<string>();
+                resource.links = links;
+                for (const token of Parser.parse(sourceHTML)) {
+                    switch (token.type) {
+                        case 'open': {
+                            const linkAttributeName = tagToLinkAttributeName[token.name];
+                            if (linkAttributeName) {
+                                const href = token.attributes[linkAttributeName];
+                                const url = new URL(href, resource.url);
+                                links.add(url.href);
+                                enqueueURLIfNeeded(url, context);
+                            }
+                        }
+                        break;
                     }
                 }
             }
-            break;
         }
+    } catch (error) {
+        context.parseErrors.set(resource.url.href, error.toString());
     }
-
-    context.graph.set(source.href, links);
 }
 
 export class Crawler {
@@ -98,12 +131,12 @@ export class Crawler {
     async crawlAsync(url: URL): Promise<SiteGraph> {
         const base = new URL(url.href.substring(0, url.href.lastIndexOf("/")));
 
-        const context: CrawlContext = {
+        const context: Context = {
             loader: this.loader,
             base,
-            graph: new Map(),
-            queuedURLs: new Set(),
+            resources: new Map(),
             workItems: [],
+            parseErrors: new Map(),
         };
 
         enqueueURLIfNeeded(url, context);
@@ -114,6 +147,9 @@ export class Crawler {
             // TODO: Events
         }
 
-        return context.graph;
+        return new Map(Array.from(context.resources.entries())
+            .filter(([href, resource]) => resource.links)
+            .map(([href, resource]) => ([href, resource.links ?? new Set()]))
+        );
     }
 }

@@ -17,9 +17,8 @@ function toMap(o: { [path: string]: string[] }): SiteGraph {
 
 async function crawl(files: { [path: string]: string }, entry = "index.html"): Promise<SiteGraph> {
     const crawler = new Crawler({
-        loadAsync: (url: URL) => {
-            return Promise.resolve(files[url.pathname.substring(1)]);
-        },
+        getContentTypeAsync: (url: URL) => Promise.resolve(url.href.endsWith(".html") ? "text/html" : "application/octet-stream"),
+        readTextAsync: (url: URL) => Promise.resolve(files[url.pathname.substring(1)]),
     });
 
     return await crawler.crawlAsync(toFileURL(entry));
