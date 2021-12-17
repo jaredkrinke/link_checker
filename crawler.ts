@@ -1,5 +1,4 @@
 import { Parser } from "https://deno.land/x/event_driven_html_parser@4.0.2/parser.ts";
-import { pooledMap } from "https://deno.land/std@0.115.1/async/pool.ts"
 
 export interface Loader {
     getContentTypeAsync: (url: URL) => Promise<string>;
@@ -40,6 +39,7 @@ interface WorkItem {
 
 interface Context {
     loader: Loader;
+    base: string;
     resources: Map<string, Resource>;
     workItems: WorkItem[];
     parseErrors: Map<string, string>;
@@ -109,7 +109,10 @@ async function processWorkItem(item: WorkItem, context: Context): Promise<void> 
                                 const href = token.attributes[linkAttributeName];
                                 const url = new URL(href, resource.url);
                                 links.add(url.href);
-                                enqueueURLIfNeeded(url, context);
+
+                                if (url.href.startsWith(context.base)) {
+                                    enqueueURLIfNeeded(url, context);
+                                }
                             }
                         }
                         break;
@@ -127,8 +130,10 @@ export class Crawler {
     }
 
     async crawlAsync(url: URL): Promise<ResourceCollection> {
+        const urlString = url.href;
         const context: Context = {
             loader: this.loader,
+            base: urlString.substring(0, urlString.lastIndexOf("/") + 1),
             resources: new Map(),
             workItems: [],
             parseErrors: new Map(),
@@ -137,10 +142,8 @@ export class Crawler {
         enqueueURLIfNeeded(url, context);
 
         // Process resources
-        const maxConcurrency = 1;
-        const processor = pooledMap(maxConcurrency, context.workItems, (item) => processWorkItem(item, context));
-        for await (const _void of processor) {
-            // TODO: Events
+        for (const item of context.workItems) {
+            await processWorkItem(item, context);
         }
 
         const collection: ResourceCollection = new Map();

@@ -4,8 +4,12 @@ import { Crawler, ResourceCollection, ResourceInfo } from "../crawler.ts";
 const htmlType = "text/html";
 const otherType = "application/octet-stream";
 const fileURLPrefix = "file:///";
-function toFileURL(path: string): URL {
-    return new URL(fileURLPrefix + path);
+function toFileURL(pathOrURL: string): URL {
+    if (pathOrURL.indexOf(":") >= 0) {
+        return new URL(pathOrURL);
+    } else {
+        return new URL(fileURLPrefix + pathOrURL);
+    }
 }
 
 function fromFileURL(url: URL): string {
@@ -74,6 +78,20 @@ Deno.test("One link", async () => {
     assertEquals(actual, expected);
 });
 
+Deno.test("One link between directories", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="./sub/dir/one/a.html">link</a></body></html>`,
+        "sub/dir/one/a.html": `<html><body><a href="../../dir/../../index.html">link</a></body></html>`,
+    });
+
+    const expected = toMap({
+        "index.html": ["sub/dir/one/a.html"],
+        "sub/dir/one/a.html": ["index.html"],
+    });
+
+    assertEquals(actual, expected);
+});
+
 Deno.test("Valid links", async () => {
     const actual = await crawl({
         "index.html": `<html><head><link rel="stylesheet" href="style.css"></head><body><a href="other.html">Other</a><a href="image.png"><img src="image.png"></a></body></html>`,
@@ -118,6 +136,18 @@ Deno.test("Broken CSS link", async () => {
         "other.html": [],
         "style.css": false,
         "image.png": true,
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("External links should be ignored by default", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="http://www.schemescape.com/">link</a></body></html>`,
+    });
+
+    const expected = toMap({
+        "index.html": ["http://www.schemescape.com/"],
     });
 
     assertEquals(actual, expected);
