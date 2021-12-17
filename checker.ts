@@ -31,8 +31,9 @@ export class LinkChecker {
             if (info.links) {
                 for (const target of info.links.values()) {
                     const targetInfo = collection.get(target);
+
+                    // Broken links are links that have been tested (so they're in the collection), but that have an undefined content type
                     if (targetInfo && !targetInfo.contentType) {
-                        // Broken link
                         brokenLinks.push({ source, target });
                     }
                 }
