@@ -16,7 +16,11 @@ function fromFileURL(url: URL): string {
     return url.pathname.substring(1);
 }
 
-function toMap(o: { [path: string]: string[] | true | false }): ResourceCollection {
+function getPathOrURLString(url: URL): string {
+    return (url.protocol === "file:") ? fromFileURL(url) : url.href;
+}
+
+function toMap(o: { [path: string]: string[] | true | false | undefined }): ResourceCollection {
     const collection: ResourceCollection = new Map();
     for (const [key, value] of Object.entries(o)) {
         const url = toFileURL(key);
@@ -25,9 +29,11 @@ function toMap(o: { [path: string]: string[] | true | false }): ResourceCollecti
             info.contentType = otherType;
         } else if (value === false) {
             info.contentType = undefined;
-        } else {
+        } else if (Array.isArray(value)) {
             info.contentType = htmlType;
             info.links = new Set(value.map(path => toFileURL(path).href));
+        } else {
+            info.contentType = htmlType;
         }
 
         collection.set(url.href, info);
@@ -38,15 +44,17 @@ function toMap(o: { [path: string]: string[] | true | false }): ResourceCollecti
 async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry = "index.html"): Promise<ResourceCollection> {
     const crawler = new Crawler({
         getContentTypeAsync: (url: URL) => {
-            const path = fromFileURL(url);
-            if (files[path] !== undefined) {
-                return Promise.resolve(path.endsWith(".html") ? htmlType : otherType);
+            const pathOrURL = getPathOrURLString(url);
+            if (files[pathOrURL] !== undefined) {
+                return Promise.resolve(pathOrURL.endsWith(".html") ? htmlType : otherType);
             } else {
                 throw new Deno.errors.NotFound();
             }
         },
         
-        readTextAsync: (url: URL) => Promise.resolve(files[fromFileURL(url)]),
+        readTextAsync: (url: URL) => {
+            return Promise.resolve(files[getPathOrURLString(url)]);
+        }
     });
 
     return await crawler.crawlAsync(toFileURL(entry), options);
@@ -174,6 +182,24 @@ Deno.test("Base override can cause parent directory to be considered internal", 
     const expected = toMap({
         "base/index.html": ["index.html"],
         "index.html": [],
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("External links can be checked", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`,
+        "http://www.schemescape.com/deep.html": `<html><body><a href="other.html">link</a></body></html>`,
+    }, { checkExternalLinks: true });
+
+    const expected = toMap({
+        "index.html": [
+            "http://www.schemescape.com/deep.html",
+            "http://www.schemescape.com/broken.html",
+        ],
+        "http://www.schemescape.com/deep.html": undefined,
+        "http://www.schemescape.com/broken.html": false,
     });
 
     assertEquals(actual, expected);

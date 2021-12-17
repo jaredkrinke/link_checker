@@ -7,6 +7,7 @@ export interface Loader {
 
 export interface CrawlOptions {
     base?: URL;
+    checkExternalLinks?: boolean;
 }
 
 export interface ResourceInfo {
@@ -32,7 +33,8 @@ enum ResourceType {
 
 interface Resource {
     type: ResourceType;
-    url?: URL;
+    url: URL;
+    internal: boolean;
     contentType?: string;
     links?: Set<string>;
 }
@@ -44,6 +46,7 @@ interface WorkItem {
 interface Context {
     loader: Loader;
     base: string;
+    checkExternalLinks: boolean;
     resources: Map<string, Resource>;
     workItems: WorkItem[];
     parseErrors: Map<string, string>;
@@ -65,12 +68,16 @@ function assert(condition: any, message: string): asserts condition {
 function enqueueURLIfNeeded(url: URL, context: Context): void {
     const { resources } = context;
     const { href } = url;
+    const internal = url.href.startsWith(context.base);
+    const shouldCheck = internal || context.checkExternalLinks;
 
-    if (!resources.has(href)) {
+    if (shouldCheck && !resources.has(href)) {
         resources.set(href, {
             type: ResourceType.unknown,
+            internal,
             url,
         });
+
         context.workItems.push({ href });
     }
 }
@@ -92,9 +99,8 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
             resource.type = ResourceType.missing;
         }
 
-        // Follow links to HTML files
-        // TODO: Only follow internal links!
-        if (resource.type === ResourceType.html) {
+        // For internal HTML files, follow links
+        if (resource.internal && resource.type === ResourceType.html) {
             let sourceHTML;
             try {
                 sourceHTML = await context.loader.readTextAsync(source);
@@ -113,10 +119,7 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
                                 const href = token.attributes[linkAttributeName];
                                 const url = new URL(href, resource.url);
                                 links.add(url.href);
-
-                                if (url.href.startsWith(context.base)) {
-                                    enqueueURLIfNeeded(url, context);
-                                }
+                                enqueueURLIfNeeded(url, context);
                             }
                         }
                         break;
@@ -137,7 +140,12 @@ export class Crawler {
         const urlString = url.href;
         const context: Context = {
             loader: this.loader,
+
+            // Options
             base: options?.base?.href ?? urlString.substring(0, urlString.lastIndexOf("/") + 1),
+            checkExternalLinks: options?.checkExternalLinks ?? false,
+
+            // State
             resources: new Map(),
             workItems: [],
             parseErrors: new Map(),
