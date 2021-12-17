@@ -191,7 +191,7 @@ Deno.test("External links can be checked", async () => {
     const actual = await crawl({
         "index.html": `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`,
         "http://www.schemescape.com/deep.html": `<html><body><a href="other.html">link</a></body></html>`,
-    }, { checkExternalLinks: true });
+    }, { externalLinks: "check" });
 
     const expected = toMap({
         "index.html": [
@@ -199,6 +199,25 @@ Deno.test("External links can be checked", async () => {
             "http://www.schemescape.com/broken.html",
         ],
         "http://www.schemescape.com/deep.html": undefined,
+        "http://www.schemescape.com/broken.html": false,
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("External links can be followed", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`,
+        "http://www.schemescape.com/deep.html": `<html><body><a href="other.html">link</a></body></html>`,
+    }, { externalLinks: "follow" });
+
+    const expected = toMap({
+        "index.html": [
+            "http://www.schemescape.com/deep.html",
+            "http://www.schemescape.com/broken.html",
+        ],
+        "http://www.schemescape.com/deep.html": ["http://www.schemescape.com/other.html"],
+        "http://www.schemescape.com/other.html": false,
         "http://www.schemescape.com/broken.html": false,
     });
 

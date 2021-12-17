@@ -7,7 +7,7 @@ export interface Loader {
 
 export interface CrawlOptions {
     base?: URL;
-    checkExternalLinks?: boolean;
+    externalLinks?: "ignore" | "check" | "follow";
 }
 
 export interface ResourceInfo {
@@ -47,6 +47,7 @@ interface Context {
     loader: Loader;
     base: string;
     checkExternalLinks: boolean;
+    followExternalLinks: boolean;
     resources: Map<string, Resource>;
     workItems: WorkItem[];
     parseErrors: Map<string, string>;
@@ -100,7 +101,10 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
         }
 
         // For internal HTML files, follow links
-        if (resource.internal && resource.type === ResourceType.html) {
+        const shouldParse = (resource.type === ResourceType.html)
+            && (resource.internal || context.followExternalLinks);
+
+        if (shouldParse) {
             let sourceHTML;
             try {
                 sourceHTML = await context.loader.readTextAsync(source);
@@ -138,12 +142,14 @@ export class Crawler {
 
     async crawlAsync(url: URL, options?: CrawlOptions): Promise<ResourceCollection> {
         const urlString = url.href;
+        const externalLinks = options?.externalLinks ?? "ignore";
         const context: Context = {
             loader: this.loader,
 
             // Options
             base: options?.base?.href ?? urlString.substring(0, urlString.lastIndexOf("/") + 1),
-            checkExternalLinks: options?.checkExternalLinks ?? false,
+            checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
+            followExternalLinks: externalLinks === "follow",
 
             // State
             resources: new Map(),
