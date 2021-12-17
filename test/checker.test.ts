@@ -63,65 +63,15 @@ Deno.test("External links should be ignored by default", async () => {
     assertEquals(actual, expected);
 });
 
-// Deno.test("Parent directory links are considered external by default", async () => {
-//     const actual = await check({
-//         "base/index.html": `<html><body><a href="../index.html">link</a></body></html>`,
-//     }, {}, "base/index.html");
+Deno.test("External links can be checked", async () => {
+    const actual = await check({
+        "index.html": `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`,
+        "http://www.schemescape.com/deep.html": `<html><body><a href="other.html">link</a></body></html>`,
+    }, { checkExternalLinks: true });
 
-//     const expected = toMap({
-//         "base/index.html": ["index.html"],
-//     });
+    const expected = toList([
+        { source: "index.html", target: "http://www.schemescape.com/broken.html" },
+    ]);
 
-//     assertEquals(actual, expected);
-// });
-
-// Deno.test("Base override can cause parent directory to be considered internal", async () => {
-//     const actual = await check({
-//         "index.html": `<html></html>`,
-//         "base/index.html": `<html><body><a href="../index.html">link</a></body></html>`,
-//     }, { base: toFileURL(".") }, "base/index.html");
-
-//     const expected = toMap({
-//         "base/index.html": ["index.html"],
-//         "index.html": [],
-//     });
-
-//     assertEquals(actual, expected);
-// });
-
-// Deno.test("External links can be checked", async () => {
-//     const actual = await check({
-//         "index.html": `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`,
-//         "http://www.schemescape.com/deep.html": `<html><body><a href="other.html">link</a></body></html>`,
-//     }, { externalLinks: "check" });
-
-//     const expected = toMap({
-//         "index.html": [
-//             "http://www.schemescape.com/deep.html",
-//             "http://www.schemescape.com/broken.html",
-//         ],
-//         "http://www.schemescape.com/deep.html": undefined,
-//         "http://www.schemescape.com/broken.html": false,
-//     });
-
-//     assertEquals(actual, expected);
-// });
-
-// Deno.test("External links can be followed", async () => {
-//     const actual = await check({
-//         "index.html": `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`,
-//         "http://www.schemescape.com/deep.html": `<html><body><a href="other.html">link</a></body></html>`,
-//     }, { externalLinks: "follow" });
-
-//     const expected = toMap({
-//         "index.html": [
-//             "http://www.schemescape.com/deep.html",
-//             "http://www.schemescape.com/broken.html",
-//         ],
-//         "http://www.schemescape.com/deep.html": ["http://www.schemescape.com/other.html"],
-//         "http://www.schemescape.com/other.html": false,
-//         "http://www.schemescape.com/broken.html": false,
-//     });
-
-//     assertEquals(actual, expected);
-// });
+    assertEquals(actual, expected);
+});

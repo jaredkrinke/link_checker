@@ -30,7 +30,8 @@ export class LinkChecker {
         for (const [source, info] of collection.entries()) {
             if (info.links) {
                 for (const target of info.links.values()) {
-                    if (!collection.get(target)?.contentType) {
+                    const targetInfo = collection.get(target);
+                    if (targetInfo && !targetInfo.contentType) {
                         // Broken link
                         brokenLinks.push({ source, target });
                     }
