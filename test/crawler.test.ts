@@ -65,7 +65,7 @@ Deno.test("Valid links", async () => {
     assertEquals(actual, expected);
 });
 
-Deno.test("Mututal links", async () => {
+Deno.test("Mutual links", async () => {
     const actual = await crawl({
         "index.html": `<html><body><a href="other.html">link</a></body></html>`,
         "other.html": `<html><body><a href="index.html">link</a></body></html>`,
