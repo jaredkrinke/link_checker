@@ -1,29 +1,11 @@
 import { assertEquals } from "https://deno.land/std@0.115.1/testing/asserts.ts";
 import { CrawlOptions, Crawler, ResourceCollection, ResourceInfo } from "../crawler.ts";
-
-const htmlType = "text/html";
-const otherType = "application/octet-stream";
-const fileURLPrefix = "file:///";
-function toFileURL(pathOrURL: string): URL {
-    if (pathOrURL.indexOf(":") >= 0) {
-        return new URL(pathOrURL);
-    } else {
-        return new URL(fileURLPrefix + pathOrURL);
-    }
-}
-
-function fromFileURL(url: URL): string {
-    return url.pathname.substring(1);
-}
-
-function getPathOrURLString(url: URL): string {
-    return (url.protocol === "file:") ? fromFileURL(url) : url.href;
-}
+import { createLoader, htmlType, otherType, toURL } from "./shared.ts";
 
 function toMap(o: { [path: string]: string[] | true | false | undefined }): ResourceCollection {
     const collection: ResourceCollection = new Map();
     for (const [key, value] of Object.entries(o)) {
-        const url = toFileURL(key);
+        const url = toURL(key);
         const info: Partial<ResourceInfo> = {};
         if (value === true) {
             info.contentType = otherType;
@@ -31,7 +13,7 @@ function toMap(o: { [path: string]: string[] | true | false | undefined }): Reso
             info.contentType = undefined;
         } else if (Array.isArray(value)) {
             info.contentType = htmlType;
-            info.links = new Set(value.map(path => toFileURL(path).href));
+            info.links = new Set(value.map(path => toURL(path).href));
         } else {
             info.contentType = htmlType;
         }
@@ -42,22 +24,8 @@ function toMap(o: { [path: string]: string[] | true | false | undefined }): Reso
 }
 
 async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry = "index.html"): Promise<ResourceCollection> {
-    const crawler = new Crawler({
-        getContentTypeAsync: (url: URL) => {
-            const pathOrURL = getPathOrURLString(url);
-            if (files[pathOrURL] !== undefined) {
-                return Promise.resolve(pathOrURL.endsWith(".html") ? htmlType : otherType);
-            } else {
-                throw new Deno.errors.NotFound();
-            }
-        },
-        
-        readTextAsync: (url: URL) => {
-            return Promise.resolve(files[getPathOrURLString(url)]);
-        }
-    });
-
-    return await crawler.crawlAsync(toFileURL(entry), options);
+    const crawler = new Crawler(createLoader(files));
+    return await crawler.crawlAsync(toURL(entry), options);
 }
 
 Deno.test("No links", async () => {
@@ -177,7 +145,7 @@ Deno.test("Base override can cause parent directory to be considered internal", 
     const actual = await crawl({
         "index.html": `<html></html>`,
         "base/index.html": `<html><body><a href="../index.html">link</a></body></html>`,
-    }, { base: toFileURL(".") }, "base/index.html");
+    }, { base: toURL(".") }, "base/index.html");
 
     const expected = toMap({
         "base/index.html": ["index.html"],
