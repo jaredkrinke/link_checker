@@ -1,4 +1,5 @@
-import { Loader, Crawler, getResourceIdentityFromURL } from "./crawler.ts";
+import { getResourceIdentityFromURL } from "./shared.ts";
+import { Loader, Crawler } from "./crawler.ts";
 export type { Loader };
 
 export interface Link {

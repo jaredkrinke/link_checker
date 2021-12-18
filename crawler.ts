@@ -1,4 +1,5 @@
-import { Parser } from "https://deno.land/x/event_driven_html_parser@4.0.2/parser.ts";
+import { ContentTypeParser, getResourceIdentityFromURL } from "./shared.ts";
+import { parse as parseHTML } from "./parse_html.ts";
 
 export interface Loader {
     getContentTypeAsync: (url: URL) => Promise<string>;
@@ -9,6 +10,7 @@ export interface CrawlOptions {
     base?: URL;
     externalLinks?: "ignore" | "check" | "follow";
     recordsIds?: boolean;
+    contentTypeParsers?: { [contentType: string]: ContentTypeParser };
 }
 
 export interface ResourceLink {
@@ -30,19 +32,10 @@ export class CrawlError extends Error {
     }
 }
 
-enum ResourceType {
-    unknown,    // Initial state (i.e. has not been checked yet)
-    html,       // HTML (i.e. crawl-able)
-    other,      // Not HTML (i.e. not crawl-able)
-    invalid,    // Syntactically invalid href
-    missing,    // Broken link
-}
-
 interface Resource {
-    type: ResourceType;
     url: URL;
-    internal: boolean;
     contentType?: string;
+    internal: boolean;
     links?: ResourceLink[];
     ids?: Set<string>;
 }
@@ -57,32 +50,16 @@ interface Context {
     checkExternalLinks: boolean;
     followExternalLinks: boolean;
     recordIds: boolean;
+    contentTypeParsers: Map<string, ContentTypeParser>;
     resources: Map<string, Resource>;
     workItems: WorkItem[];
     parseErrors: Map<string, string>;
 }
 
-const tagToLinkAttributeName: { [tagName:string]: string } = {
-    a: "href",
-    link: "href",
-    img: "src",
-};
-
 // deno-lint-ignore no-explicit-any
 function assert(condition: any, message: string): asserts condition {
     if (!condition) {
         throw new CrawlError(`Internal error: ${message}`);
-    }
-}
-
-export function getResourceIdentityFromURL(url: URL): URL {
-    // Everything except fragment/hash
-    if (url.hash) {
-        const resourceURL = new URL(url.href);
-        resourceURL.hash = "";
-        return resourceURL;
-    } else {
-        return url;
     }
 }
 
@@ -95,7 +72,6 @@ function enqueueURLIfNeeded(urlWithFragment: URL, context: Context): void {
 
     if (shouldCheck && !resources.has(href)) {
         resources.set(href, {
-            type: ResourceType.unknown,
             internal,
             url,
         });
@@ -104,7 +80,12 @@ function enqueueURLIfNeeded(urlWithFragment: URL, context: Context): void {
     }
 }
 
-const htmlContentTypePattern = /^text\/html(;.*)?$/
+
+const defaultContentTypeParsers = new Map<string, ContentTypeParser>([
+    ["text/html", parseHTML],
+]);
+
+const contentTypeShortPattern = /^([^;]*?)(;.*)?$/;
 async function processWorkItemAsync(item: WorkItem, context: Context): Promise<void> {
     const resource = context.resources.get(item.href);
     assert(resource, "Attempted to process unknown href");
@@ -112,66 +93,54 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
 
     try {
         // Ensure the item exists and check its content type
-        const { loader } = context;
+        const { loader, recordIds } = context;
         const source = resource.url;
+        let contentTypeShort: string | undefined = undefined;
         try {
             resource.contentType = await loader.getContentTypeAsync(source);
-            resource.type = htmlContentTypePattern.test(resource.contentType) ? ResourceType.html : ResourceType.unknown;
+
+            const matches = contentTypeShortPattern.exec(resource.contentType);
+            assert(matches, "Invalid content type");
+            contentTypeShort = matches[1];
         } catch (_error) {
-            resource.type = ResourceType.missing;
+            resource.contentType = undefined; // Failed to get or parse content type; treat the resource as missing
         }
 
-        // For internal HTML files, follow links
-        const shouldParse = (resource.type === ResourceType.html)
-            && (resource.internal || context.followExternalLinks);
+        const parse = contentTypeShort ? context.contentTypeParsers.get(contentTypeShort) : undefined;
 
+        // For parsable files, follow links for internal resource (or external, if requested)
+        const shouldParse = parse && (resource.internal || context.followExternalLinks);
         if (shouldParse) {
-            let sourceHTML;
+            let content;
             try {
-                sourceHTML = await context.loader.readTextAsync(source);
+                content = await context.loader.readTextAsync(source);
             } catch (_error) {
-                resource.type = ResourceType.missing;
+                resource.contentType = undefined; // Failed to read the resource; treat it as missing
             }
 
-            if (sourceHTML !== undefined) {
-                const { recordIds } = context;
-                const links: ResourceLink[] = [];
-                resource.links = links;
+            if (content !== undefined) {
+                const base = resource.url;
+                const { hrefs, ids } = await parse({ content, recordIds });
 
-                let ids: Set<string> | undefined;
-                if (recordIds) {
-                    ids = new Set();
-                    resource.ids = ids;
+                resource.links = [];
+                const links = resource.links;
+                for (const href of hrefs) {
+                    const url = new URL(href, base);
+                    links.push({
+                        canonicalURL: url,
+                        originalHrefString: href,
+                    });
+
+                    enqueueURLIfNeeded(url, context);
                 }
 
-                for (const token of Parser.parse(sourceHTML)) {
-                    switch (token.type) {
-                        case 'open': {
-                            if (recordIds) {
-                                const id = token.attributes.id;
-                                if (id) {
-                                    ids!.add(id);
-                                }
-                            }
-
-                            const linkAttributeName = tagToLinkAttributeName[token.name];
-                            if (linkAttributeName) {
-                                const href = token.attributes[linkAttributeName];
-                                const url = new URL(href, resource.url);
-                                links.push({
-                                    canonicalURL: url,
-                                    originalHrefString: href,
-                                })
-                                
-                                enqueueURLIfNeeded(url, context);
-                            }
-                        }
-                        break;
-                    }
+                if (recordIds) {
+                    resource.ids = ids;
                 }
             }
         }
     } catch (error) {
+        // Note parsing errors, but continue processing
         context.parseErrors.set(resource.url.href, error.toString());
     }
 }
@@ -181,6 +150,7 @@ export class Crawler {
     }
 
     async crawlAsync(url: URL, options?: CrawlOptions): Promise<ResourceCollection> {
+        // Parse options and create context
         const urlString = url.href;
         const externalLinks = options?.externalLinks ?? "ignore";
         const context: Context = {
@@ -191,6 +161,7 @@ export class Crawler {
             checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
             followExternalLinks: externalLinks === "follow",
             recordIds: (options?.recordsIds === true),
+            contentTypeParsers: (options?.contentTypeParsers) ? new Map(Object.entries(options.contentTypeParsers)) : defaultContentTypeParsers,
 
             // State
             resources: new Map(),
@@ -198,13 +169,13 @@ export class Crawler {
             parseErrors: new Map(),
         };
 
-        enqueueURLIfNeeded(url, context);
-
         // Process resources
+        enqueueURLIfNeeded(url, context);
         for (const item of context.workItems) {
             await processWorkItemAsync(item, context);
         }
 
+        // Map to output format
         const collection: ResourceCollection = new Map();
         for (const [key, value] of context.resources.entries()) {
             const { contentType, links, ids } = value;
@@ -214,7 +185,6 @@ export class Crawler {
                 ...ids ? { ids } : {},
             });
         }
-
         return collection;
     }
 }

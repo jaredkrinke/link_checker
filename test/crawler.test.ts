@@ -257,3 +257,38 @@ Deno.test("Links to ids can be recorded", async () => {
 
     assertEquals(actual, expected);
 });
+
+Deno.test("HTML parser can be overridden", async () => {
+    const actual = await crawl({
+        "index.html": ``,
+    }, { recordsIds: true, contentTypeParsers: {
+        "text/html": () => Promise.resolve({
+            hrefs: ["#heading", "other.html#something"],
+            ids: new Set(["heading"]),
+        })
+    } });
+
+    const expected = new Map(Object.entries({
+        "file:///index.html": {
+            contentType: "text/html",
+            links: [
+                {
+                    canonicalURL: new URL("file:///index.html#heading"),
+                    originalHrefString: "#heading",
+                },
+                {
+                    canonicalURL: new URL("file:///other.html#something"),
+                    originalHrefString: "other.html#something",
+                },
+            ],
+            ids: new Set([
+                "heading",
+            ]),
+        },
+        "file:///other.html": {
+            contentType: undefined,
+        },
+    }));
+
+    assertEquals(actual, expected);
+});
