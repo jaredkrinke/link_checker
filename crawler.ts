@@ -1,16 +1,18 @@
 import { ContentTypeParser, getResourceIdentityFromURL } from "./shared.ts";
-import { parse as parseHTML } from "./parse_html.ts";
 
 export interface Loader {
     getContentTypeAsync: (url: URL) => Promise<string>;
     readTextAsync: (url: URL) => Promise<string>;
 }
 
+export interface ContentTypeParserCollection {
+    [contentType: string]: ContentTypeParser;
+}
+
 export interface CrawlOptions {
     base?: URL;
     externalLinks?: "ignore" | "check" | "follow";
     recordsIds?: boolean;
-    contentTypeParsers?: { [contentType: string]: ContentTypeParser };
 }
 
 export interface ResourceLink {
@@ -80,11 +82,6 @@ function enqueueURLIfNeeded(urlWithFragment: URL, context: Context): void {
     }
 }
 
-
-const defaultContentTypeParsers = new Map<string, ContentTypeParser>([
-    ["text/html", parseHTML],
-]);
-
 const contentTypeShortPattern = /^([^;]*?)(;.*)?$/;
 async function processWorkItemAsync(item: WorkItem, context: Context): Promise<void> {
     const resource = context.resources.get(item.href);
@@ -146,7 +143,7 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
 }
 
 export class Crawler {
-    constructor(private loader: Loader) {
+    constructor(private loader: Loader, private contentTypeParsers: ContentTypeParserCollection) {
     }
 
     async crawlAsync(url: URL, options?: CrawlOptions): Promise<ResourceCollection> {
@@ -161,7 +158,7 @@ export class Crawler {
             checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
             followExternalLinks: externalLinks === "follow",
             recordIds: (options?.recordsIds === true),
-            contentTypeParsers: (options?.contentTypeParsers) ? new Map(Object.entries(options.contentTypeParsers)) : defaultContentTypeParsers,
+            contentTypeParsers: new Map(Object.entries(this.contentTypeParsers)),
 
             // State
             resources: new Map(),
