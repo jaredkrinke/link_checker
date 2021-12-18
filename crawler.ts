@@ -1,12 +1,9 @@
-import { ContentTypeParser, getResourceIdentityFromURL } from "./shared.ts";
+import { ContentTypeParserCollection, getResourceIdentityFromURL } from "./shared.ts";
 
-export interface Loader {
+export interface CrawlHandlers {
     getContentTypeAsync: (url: URL) => Promise<string>;
     readTextAsync: (url: URL) => Promise<string>;
-}
-
-export interface ContentTypeParserCollection {
-    [contentType: string]: ContentTypeParser;
+    contentTypeParsers: ContentTypeParserCollection;
 }
 
 export interface CrawlOptions {
@@ -47,12 +44,11 @@ interface WorkItem {
 }
 
 interface Context {
-    loader: Loader;
+    handlers: CrawlHandlers;
     base: string;
     checkExternalLinks: boolean;
     followExternalLinks: boolean;
     recordIds: boolean;
-    contentTypeParsers: Map<string, ContentTypeParser>;
     resources: Map<string, Resource>;
     workItems: WorkItem[];
     parseErrors: Map<string, string>;
@@ -90,11 +86,11 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
 
     try {
         // Ensure the item exists and check its content type
-        const { loader, recordIds } = context;
+        const { handlers, recordIds } = context;
         const source = resource.url;
         let contentTypeShort: string | undefined = undefined;
         try {
-            resource.contentType = await loader.getContentTypeAsync(source);
+            resource.contentType = await handlers.getContentTypeAsync(source);
 
             const matches = contentTypeShortPattern.exec(resource.contentType);
             assert(matches, "Invalid content type");
@@ -103,14 +99,14 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
             resource.contentType = undefined; // Failed to get or parse content type; treat the resource as missing
         }
 
-        const parse = contentTypeShort ? context.contentTypeParsers.get(contentTypeShort) : undefined;
+        const parse = contentTypeShort ? handlers.contentTypeParsers[contentTypeShort] : undefined;
 
         // For parsable files, follow links for internal resource (or external, if requested)
         const shouldParse = parse && (resource.internal || context.followExternalLinks);
         if (shouldParse) {
             let content;
             try {
-                content = await context.loader.readTextAsync(source);
+                content = await handlers.readTextAsync(source);
             } catch (_error) {
                 resource.contentType = undefined; // Failed to read the resource; treat it as missing
             }
@@ -143,7 +139,7 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
 }
 
 export class Crawler {
-    constructor(private loader: Loader, private contentTypeParsers: ContentTypeParserCollection) {
+    constructor(private handlers: CrawlHandlers) {
     }
 
     async crawlAsync(urlOrURLs: URL | URL[], options?: CrawlOptions): Promise<ResourceCollection> {
@@ -156,14 +152,13 @@ export class Crawler {
         const urlString = urls[0].href; // Default to first URL's base
         const externalLinks = options?.externalLinks ?? "ignore";
         const context: Context = {
-            loader: this.loader,
+            handlers: this.handlers,
 
             // Options
             base: options?.base?.href ?? urlString.substring(0, urlString.lastIndexOf("/") + 1),
             checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
             followExternalLinks: externalLinks === "follow",
             recordIds: (options?.recordsIds === true),
-            contentTypeParsers: new Map(Object.entries(this.contentTypeParsers)),
 
             // State
             resources: new Map(),

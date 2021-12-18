@@ -10,6 +10,10 @@ export interface ContentTypeParserResult {
 
 export type ContentTypeParser = (context: ContentTypeParserContext) => Promise<ContentTypeParserResult>;
 
+export interface ContentTypeParserCollection {
+    [contentType: string]: ContentTypeParser;
+}
+
 export function getResourceIdentityFromURL(url: URL): URL {
     // Everything except fragment/hash
     if (url.hash) {

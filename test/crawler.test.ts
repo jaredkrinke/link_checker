@@ -1,7 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.115.1/testing/asserts.ts";
 import { CrawlOptions, Crawler, ResourceCollection, ResourceInfo } from "../crawler.ts";
-import { createLoader, htmlType, otherType, toURL } from "./shared.ts";
-import { parse } from "../parse_html.ts";
+import type { ContentTypeParserCollection } from "../shared.ts";
+import { createHandlers, htmlType, otherType, toURL } from "./shared.ts";
 
 function toMap(o: { [path: string]: string[] | true | false | undefined | ResourceInfo }): ResourceCollection {
     const collection: ResourceCollection = new Map();
@@ -29,8 +29,13 @@ function toMap(o: { [path: string]: string[] | true | false | undefined | Resour
     return collection;
 }
 
-async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry: string | string[] = "index.html", contentTypeParsers = { "text/html": parse}): Promise<ResourceCollection> {
-    const crawler = new Crawler(createLoader(files), contentTypeParsers);
+async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry: string | string[] = "index.html", contentTypeParsers?: ContentTypeParserCollection): Promise<ResourceCollection> {
+    const handlers = createHandlers(files);
+    if (contentTypeParsers) {
+        handlers.contentTypeParsers = contentTypeParsers;
+    }
+    
+    const crawler = new Crawler(handlers);
     return await crawler.crawlAsync(typeof(entry) === "string" ? toURL(entry) : entry.map(e => toURL(e)), options);
 }
 

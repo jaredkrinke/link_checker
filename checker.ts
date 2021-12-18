@@ -1,6 +1,6 @@
 import { getResourceIdentityFromURL } from "./shared.ts";
-import { Loader, ContentTypeParserCollection, Crawler } from "./crawler.ts";
-export type { Loader, ContentTypeParserCollection };
+import { CrawlHandlers, Crawler } from "./crawler.ts";
+export type { CrawlHandlers };
 
 export interface Link {
     source: string;
@@ -20,13 +20,13 @@ export interface CheckLinksOptions {
 export class LinkChecker {
     private crawler: Crawler;
 
-    constructor(loader: Loader, contentTypeParsers: ContentTypeParserCollection) {
-        this.crawler = new Crawler(loader, contentTypeParsers);
+    constructor(handlers: CrawlHandlers) {
+        this.crawler = new Crawler(handlers);
     }
 
-    async checkLinksAsync(url: URL, options?: CheckLinksOptions): Promise<CheckLinksResult> {
+    async checkLinksAsync(urlOrURLs: URL | URL[], options?: CheckLinksOptions): Promise<CheckLinksResult> {
         const checkFragments = options?.checkFragments;
-        const collection = await this.crawler.crawlAsync(url, {
+        const collection = await this.crawler.crawlAsync(urlOrURLs, {
             externalLinks: options?.checkExternalLinks ? "check" : "ignore",
             recordsIds: checkFragments,
         });

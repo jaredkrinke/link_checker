@@ -1,4 +1,5 @@
-import { Loader } from "../crawler.ts";
+import { CrawlHandlers } from "../crawler.ts";
+import { parse } from "../parse_html.ts";
 
 export const htmlType = "text/html";
 export const otherType = "application/octet-stream";
@@ -21,7 +22,7 @@ function getPathOrURLString(url: URL): string {
 }
 
 
-export function createLoader(files: { [path: string]: string }): Loader {
+export function createHandlers(files: { [path: string]: string }): CrawlHandlers {
     return {
         getContentTypeAsync: (url: URL) => {
             const pathOrURL = getPathOrURLString(url);
@@ -34,6 +35,10 @@ export function createLoader(files: { [path: string]: string }): Loader {
         
         readTextAsync: (url: URL) => {
             return Promise.resolve(files[getPathOrURLString(url)]);
-        }
+        },
+
+        contentTypeParsers: {
+            "text/html": parse,
+        },
     };
 }
