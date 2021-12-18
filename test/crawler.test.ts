@@ -29,9 +29,9 @@ function toMap(o: { [path: string]: string[] | true | false | undefined | Resour
     return collection;
 }
 
-async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry = "index.html", contentTypeParsers = { "text/html": parse}): Promise<ResourceCollection> {
+async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry: string | string[] = "index.html", contentTypeParsers = { "text/html": parse}): Promise<ResourceCollection> {
     const crawler = new Crawler(createLoader(files), contentTypeParsers);
-    return await crawler.crawlAsync(toURL(entry), options);
+    return await crawler.crawlAsync(typeof(entry) === "string" ? toURL(entry) : entry.map(e => toURL(e)), options);
 }
 
 Deno.test("No links", async () => {
@@ -41,6 +41,20 @@ Deno.test("No links", async () => {
 
     const expected = toMap({
         "index.html": [],
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Multiple entry points", async () => {
+    const actual = await crawl({
+        "index.html": "<html></html>",
+        "other.html": "<html></html>",
+    }, {}, ["index.html", "other.html"]);
+
+    const expected = toMap({
+        "index.html": [],
+        "other.html": [],
     });
 
     assertEquals(actual, expected);

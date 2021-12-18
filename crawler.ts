@@ -146,9 +146,14 @@ export class Crawler {
     constructor(private loader: Loader, private contentTypeParsers: ContentTypeParserCollection) {
     }
 
-    async crawlAsync(url: URL, options?: CrawlOptions): Promise<ResourceCollection> {
+    async crawlAsync(urlOrURLs: URL | URL[], options?: CrawlOptions): Promise<ResourceCollection> {
         // Parse options and create context
-        const urlString = url.href;
+        const urls = Array.isArray(urlOrURLs) ? urlOrURLs : [urlOrURLs];
+        if (urls.length <= 0) {
+            return new Map();
+        }
+
+        const urlString = urls[0].href; // Default to first URL's base
         const externalLinks = options?.externalLinks ?? "ignore";
         const context: Context = {
             loader: this.loader,
@@ -167,7 +172,10 @@ export class Crawler {
         };
 
         // Process resources
-        enqueueURLIfNeeded(url, context);
+        for (const url of urls) {
+            enqueueURLIfNeeded(url, context);
+        }
+
         for (const item of context.workItems) {
             await processWorkItemAsync(item, context);
         }
