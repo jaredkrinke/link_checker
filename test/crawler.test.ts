@@ -2,7 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.115.1/testing/asserts.ts";
 import { CrawlOptions, Crawler, ResourceCollection, ResourceInfo } from "../crawler.ts";
 import { createLoader, htmlType, otherType, toURL } from "./shared.ts";
 
-function toMap(o: { [path: string]: string[] | true | false | undefined }): ResourceCollection {
+function toMap(o: { [path: string]: string[] | true | false | undefined | ResourceInfo }): ResourceCollection {
     const collection: ResourceCollection = new Map();
     for (const [key, value] of Object.entries(o)) {
         const url = toURL(key);
@@ -13,7 +13,12 @@ function toMap(o: { [path: string]: string[] | true | false | undefined }): Reso
             info.contentType = undefined;
         } else if (Array.isArray(value)) {
             info.contentType = htmlType;
-            info.links = new Set(value.map(path => toURL(path).href));
+            info.links = value.map(path => ({
+                canonicalURL: toURL(path),
+                originalHrefString: path,
+            }));
+        } else if (typeof(value) === "object") {
+            Object.assign(info, value);
         } else {
             info.contentType = htmlType;
         }
@@ -61,8 +66,8 @@ Deno.test("One link between directories", async () => {
     });
 
     const expected = toMap({
-        "index.html": ["sub/dir/one/a.html"],
-        "sub/dir/one/a.html": ["index.html"],
+        "index.html": ["./sub/dir/one/a.html"],
+        "sub/dir/one/a.html": ["../../dir/../../index.html"],
     });
 
     assertEquals(actual, expected);
@@ -77,7 +82,7 @@ Deno.test("Valid links", async () => {
     });
 
     const expected = toMap({
-        "index.html": ["style.css", "other.html", "image.png"],
+        "index.html": ["style.css", "other.html", "image.png", "image.png"],
         "other.html": [],
         "style.css": true,
         "image.png": true,
@@ -108,7 +113,7 @@ Deno.test("Broken CSS link", async () => {
     });
 
     const expected = toMap({
-        "index.html": ["style.css", "other.html", "image.png"],
+        "index.html": ["style.css", "other.html", "image.png", "image.png"],
         "other.html": [],
         "style.css": false,
         "image.png": true,
@@ -135,7 +140,7 @@ Deno.test("Parent directory links are considered external by default", async () 
     }, {}, "base/index.html");
 
     const expected = toMap({
-        "base/index.html": ["index.html"],
+        "base/index.html": ["../index.html"],
     });
 
     assertEquals(actual, expected);
@@ -148,7 +153,7 @@ Deno.test("Base override can cause parent directory to be considered internal", 
     }, { base: toURL(".") }, "base/index.html");
 
     const expected = toMap({
-        "base/index.html": ["index.html"],
+        "base/index.html": ["../index.html"],
         "index.html": [],
     });
 
@@ -184,10 +189,71 @@ Deno.test("External links can be followed", async () => {
             "http://www.schemescape.com/deep.html",
             "http://www.schemescape.com/broken.html",
         ],
-        "http://www.schemescape.com/deep.html": ["http://www.schemescape.com/other.html"],
+        "http://www.schemescape.com/deep.html": {
+            contentType: htmlType,
+            links: [
+                {
+                    canonicalURL: new URL("http://www.schemescape.com/other.html"),
+                    originalHrefString: "other.html",
+                }
+            ],
+        },
         "http://www.schemescape.com/other.html": false,
         "http://www.schemescape.com/broken.html": false,
     });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Ids can be recorded", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><h1 id="topic1">Topic 1</ht></body></html>`,
+    }, { recordsIds: true });
+
+    const expected = new Map(Object.entries({
+        "file:///index.html": {
+            contentType: "text/html",
+            links: [],
+            ids: new Set([
+                "topic1",
+            ]),
+        },
+    }));
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Links to ids can be recorded", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="#heading">heading</a><a href="other.html#something">link</a><h1 id="heading">heading</h1></body></html>`,
+        "other.html": `<html><body><h1 id="something">heading</h1></body></html>`,
+    }, { recordsIds: true });
+
+    const expected = new Map(Object.entries({
+        "file:///index.html": {
+            contentType: "text/html",
+            links: [
+                {
+                    canonicalURL: new URL("file:///index.html#heading"),
+                    originalHrefString: "#heading",
+                },
+                {
+                    canonicalURL: new URL("file:///other.html#something"),
+                    originalHrefString: "other.html#something",
+                },
+            ],
+            ids: new Set([
+                "heading",
+            ]),
+        },
+        "file:///other.html": {
+            contentType: "text/html",
+            links: [],
+            ids: new Set([
+                "something",
+            ]),
+        },
+    }));
 
     assertEquals(actual, expected);
 });

@@ -8,11 +8,18 @@ export interface Loader {
 export interface CrawlOptions {
     base?: URL;
     externalLinks?: "ignore" | "check" | "follow";
+    recordsIds?: boolean;
+}
+
+export interface ResourceLink {
+    canonicalURL: URL;
+    originalHrefString: string;
 }
 
 export interface ResourceInfo {
     contentType?: string;
-    links?: Set<string>;
+    links?: ResourceLink[];
+    ids?: Set<string>;
 }
 
 export type ResourceCollection = Map<string, ResourceInfo>;
@@ -36,7 +43,8 @@ interface Resource {
     url: URL;
     internal: boolean;
     contentType?: string;
-    links?: Set<string>;
+    links?: ResourceLink[];
+    ids?: Set<string>;
 }
 
 interface WorkItem {
@@ -48,6 +56,7 @@ interface Context {
     base: string;
     checkExternalLinks: boolean;
     followExternalLinks: boolean;
+    recordIds: boolean;
     resources: Map<string, Resource>;
     workItems: WorkItem[];
     parseErrors: Map<string, string>;
@@ -66,7 +75,19 @@ function assert(condition: any, message: string): asserts condition {
     }
 }
 
-function enqueueURLIfNeeded(url: URL, context: Context): void {
+export function getResourceIdentityFromURL(url: URL): URL {
+    // Everything except fragment/hash
+    if (url.hash) {
+        const resourceURL = new URL(url.href);
+        resourceURL.hash = "";
+        return resourceURL;
+    } else {
+        return url;
+    }
+}
+
+function enqueueURLIfNeeded(urlWithFragment: URL, context: Context): void {
+    const url = getResourceIdentityFromURL(urlWithFragment);
     const { resources } = context;
     const { href } = url;
     const internal = url.href.startsWith(context.base);
@@ -113,16 +134,35 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
             }
 
             if (sourceHTML !== undefined) {
-                const links = new Set<string>();
+                const { recordIds } = context;
+                const links: ResourceLink[] = [];
                 resource.links = links;
+
+                let ids: Set<string> | undefined;
+                if (recordIds) {
+                    ids = new Set();
+                    resource.ids = ids;
+                }
+
                 for (const token of Parser.parse(sourceHTML)) {
                     switch (token.type) {
                         case 'open': {
+                            if (recordIds) {
+                                const id = token.attributes.id;
+                                if (id) {
+                                    ids!.add(id);
+                                }
+                            }
+
                             const linkAttributeName = tagToLinkAttributeName[token.name];
                             if (linkAttributeName) {
                                 const href = token.attributes[linkAttributeName];
                                 const url = new URL(href, resource.url);
-                                links.add(url.href);
+                                links.push({
+                                    canonicalURL: url,
+                                    originalHrefString: href,
+                                })
+                                
                                 enqueueURLIfNeeded(url, context);
                             }
                         }
@@ -150,6 +190,7 @@ export class Crawler {
             base: options?.base?.href ?? urlString.substring(0, urlString.lastIndexOf("/") + 1),
             checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
             followExternalLinks: externalLinks === "follow",
+            recordIds: (options?.recordsIds === true),
 
             // State
             resources: new Map(),
@@ -166,10 +207,11 @@ export class Crawler {
 
         const collection: ResourceCollection = new Map();
         for (const [key, value] of context.resources.entries()) {
-            const { contentType, links } = value;
+            const { contentType, links, ids } = value;
             collection.set(key, {
                 contentType,
                 ...links ? { links } : {},
+                ...ids ? { ids } : {},
             });
         }
 

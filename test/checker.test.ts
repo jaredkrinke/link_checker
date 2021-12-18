@@ -1,12 +1,18 @@
 import { assertEquals } from "https://deno.land/std@0.115.1/testing/asserts.ts";
-import { Link, LinkChecker, CheckLinksOptions, CheckLinksResult } from "../checker.ts";
+import { LinkChecker, CheckLinksOptions, CheckLinksResult } from "../checker.ts";
 import { createLoader, toURL } from "./shared.ts";
 
-function toList(a: Link[]): CheckLinksResult {
+interface TestLink {
+    source: string;
+    target: string;
+}
+
+function toList(a: TestLink[]): CheckLinksResult {
     return {
         brokenLinks: a.map(({ source, target }) => ({
             source: toURL(source).href,
-            target: toURL(target).href,
+            target: (new URL(target, toURL(source))).href,
+            href: target,
         })),
     };
 }
@@ -71,6 +77,33 @@ Deno.test("External links can be checked", async () => {
 
     const expected = toList([
         { source: "index.html", target: "http://www.schemescape.com/broken.html" },
+    ]);
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Valid link anchors can be checked", async () => {
+    const actual = await check({
+        "index.html": `<html><body><a href="#heading">heading</a><a href="other.html#something">link</a><a href="https://www.schemescape.com/deep.html#anchor">anchor</a><h1 id="heading">heading</h1></body></html>`,
+        "other.html": `<html><body><h1 id="something">heading</h1></body></html>`,
+        "http://www.schemescape.com/deep.html": `<html><body>Not checked</body></html>`,
+    }, { checkFragments: true });
+
+    const expected = toList([]);
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Invalid link anchors can be checked", async () => {
+    const actual = await check({
+        "index.html": `<html><body><a href="#heading">heading</a><a href="other.html#something">link</a><a href="https://www.schemescape.com/deep.html#anchor">anchor</a><h1 id="something-else">heading</h1></body></html>`,
+        "other.html": `<html><body><h1 id="heading">heading</h1></body></html>`,
+        "http://www.schemescape.com/deep.html": `<html><body>Still not checked</body></html>`,
+    }, { checkFragments: true });
+
+    const expected = toList([
+        { source: "index.html", target: "#heading" },
+        { source: "index.html", target: "other.html#something" },
     ]);
 
     assertEquals(actual, expected);
