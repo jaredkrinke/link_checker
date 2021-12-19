@@ -34,7 +34,7 @@ export class LinkChecker extends LinkCheckerCore {
                 if (!response.ok) {
                     throw new Deno.errors.NotFound(url.href);
                 }
-            return await response.text();
+                return await response.text();
             },
 
             contentTypeParsers: {
