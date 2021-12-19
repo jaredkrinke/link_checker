@@ -16,6 +16,7 @@ export interface CheckLinksOptions {
     base?: URL;
     checkExternalLinks?: boolean;
     checkFragments?: boolean;
+    maxConcurrency?: number;
 }
 
 export class LinkChecker {
@@ -31,6 +32,7 @@ export class LinkChecker {
             externalLinks: options?.checkExternalLinks ? "check" : "ignore",
             recordsIds: checkFragments,
             base: options?.base,
+            maxConcurrency: options?.maxConcurrency,
         });
 
         // TODO: Only process each unique link once?
@@ -48,9 +50,9 @@ export class LinkChecker {
                         broken = !targetResourceInfo.contentType;
 
                         // Check fragment/hash as well, if requested
-                        if (checkFragments && !broken && canonicalURL.hash) {
+                        if (checkFragments && !broken && canonicalURL.hash && targetResourceInfo.ids) {
                             const fragment = canonicalURL.hash.substring(1); // Remove "#" prefix
-                            broken = !targetResourceInfo.ids || !targetResourceInfo.ids.has(fragment);
+                            broken = !targetResourceInfo.ids.has(fragment);
                         }
                     }
 

@@ -1,4 +1,5 @@
 import { ContentTypeParserCollection, getResourceIdentityFromURL } from "./shared.ts";
+import { TaskQueue } from "./task_queue.ts";
 
 export interface CrawlHandlers {
     getContentTypeAsync: (url: URL) => Promise<string>;
@@ -10,6 +11,7 @@ export interface CrawlOptions {
     base?: URL;
     externalLinks?: "ignore" | "check" | "follow";
     recordsIds?: boolean;
+    maxConcurrency?: number;
 }
 
 export interface ResourceLink {
@@ -50,7 +52,7 @@ interface Context {
     followExternalLinks: boolean;
     recordIds: boolean;
     resources: Map<string, Resource>;
-    workItems: WorkItem[];
+    taskQueue: TaskQueue<WorkItem>;
     parseErrors: Map<string, string>;
 }
 
@@ -74,7 +76,7 @@ function enqueueURLIfNeeded(urlWithFragment: URL, context: Context): void {
             url,
         });
 
-        context.workItems.push({ href });
+        context.taskQueue.enqueue({ href });
     }
 }
 
@@ -95,7 +97,12 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
             const matches = contentTypeShortPattern.exec(resource.contentType);
             assert(matches, "Invalid content type");
             contentTypeShort = matches[1];
-        } catch (_error) {
+        } catch (error) {
+            if (error instanceof Deno.errors.PermissionDenied) {
+                // Fail on permission errors
+                throw error;
+            }
+
             resource.contentType = undefined; // Failed to get or parse content type; treat the resource as missing
         }
 
@@ -107,7 +114,12 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
             let content;
             try {
                 content = await handlers.readTextAsync(source);
-            } catch (_error) {
+            } catch (error) {
+                if (error instanceof Deno.errors.PermissionDenied) {
+                    // Fail on permission errors
+                    throw error;
+                }
+
                 resource.contentType = undefined; // Failed to read the resource; treat it as missing
             }
 
@@ -133,6 +145,11 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
             }
         }
     } catch (error) {
+        if (error instanceof Deno.errors.PermissionDenied) {
+            // Fail on permission errors
+            throw error;
+        }
+
         // Note parsing errors, but continue processing
         context.parseErrors.set(resource.url.href, error.toString());
     }
@@ -162,7 +179,7 @@ export class Crawler {
 
             // State
             resources: new Map(),
-            workItems: [],
+            taskQueue: new TaskQueue((workItem) => processWorkItemAsync(workItem, context), options?.maxConcurrency),
             parseErrors: new Map(),
         };
 
@@ -171,9 +188,7 @@ export class Crawler {
             enqueueURLIfNeeded(url, context);
         }
 
-        for (const item of context.workItems) {
-            await processWorkItemAsync(item, context);
-        }
+        await context.taskQueue.drain();
 
         // Map to output format
         const collection: ResourceCollection = new Map();
