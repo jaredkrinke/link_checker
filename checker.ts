@@ -13,6 +13,7 @@ export interface CheckLinksResult {
 }
 
 export interface CheckLinksOptions {
+    base?: URL;
     checkExternalLinks?: boolean;
     checkFragments?: boolean;
 }
@@ -29,6 +30,7 @@ export class LinkChecker {
         const collection = await this.crawler.crawlAsync(urlOrURLs, {
             externalLinks: options?.checkExternalLinks ? "check" : "ignore",
             recordsIds: checkFragments,
+            base: options?.base,
         });
 
         // TODO: Only process each unique link once?
