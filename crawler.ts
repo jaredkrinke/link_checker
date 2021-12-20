@@ -80,6 +80,12 @@ function enqueueURLIfNeeded(urlWithFragment: URL, context: Context): void {
     }
 }
 
+const allowedProtocols = new Set([
+    "file:",
+    "http:",
+    "https:",
+]);
+
 const contentTypeShortPattern = /^([^;]*?)(;.*)?$/;
 async function processWorkItemAsync(item: WorkItem, context: Context): Promise<void> {
     const resource = context.resources.get(item.href);
@@ -131,12 +137,14 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
                 const links = resource.links;
                 for (const href of hrefs) {
                     const url = new URL(href, base);
-                    links.push({
-                        canonicalURL: url,
-                        originalHrefString: href,
-                    });
-
-                    enqueueURLIfNeeded(url, context);
+                    if (allowedProtocols.has(url.protocol)) {
+                        links.push({
+                            canonicalURL: url,
+                            originalHrefString: href,
+                        });
+    
+                        enqueueURLIfNeeded(url, context);
+                    }
                 }
 
                 if (recordIds) {

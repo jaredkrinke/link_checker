@@ -51,6 +51,18 @@ Deno.test("No links", async () => {
     assertEquals(actual, expected);
 });
 
+Deno.test("Ignore unknown protocols", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="mailto:jeff@notamzn.com">link</a><a href="ftp://ftp.archive.org/">link</a><a href="data:,Hello%2C%20World%21">link</a></body></html>`,
+    });
+
+    const expected = toMap({
+        "index.html": [],
+    });
+
+    assertEquals(actual, expected);
+});
+
 Deno.test("Multiple entry points", async () => {
     const actual = await crawl({
         "index.html": "<html></html>",
