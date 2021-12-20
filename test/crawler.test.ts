@@ -324,3 +324,88 @@ Deno.test("HTML parser can be overridden", async () => {
 
     assertEquals(actual, expected);
 });
+
+Deno.test("Crawl depth -1", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="d2.html">link</a></body></html>`,
+        "d2.html": `<html><body><a href="d3.html">link</a></body></html>`,
+        "d3.html": `<html><body><a href="d4.html">link</a></body></html>`,
+        "d4.html": `<html><body><a href="d5.html">link</a></body></html>`,
+        "d5.html": `<html></html>`,
+    }, { depth: -1 });
+
+    const expected = toMap({
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Crawl depth 0", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="d2.html">link</a></body></html>`,
+        "d2.html": `<html><body><a href="d3.html">link</a></body></html>`,
+        "d3.html": `<html><body><a href="d4.html">link</a></body></html>`,
+        "d4.html": `<html><body><a href="d5.html">link</a></body></html>`,
+        "d5.html": `<html></html>`,
+    }, { depth: 0 });
+
+    const expected = toMap({
+        "index.html": undefined,
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Crawl depth 1", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="d2.html">link</a></body></html>`,
+        "d2.html": `<html><body><a href="d3.html">link</a></body></html>`,
+        "d3.html": `<html><body><a href="d4.html">link</a></body></html>`,
+        "d4.html": `<html><body><a href="d5.html">link</a></body></html>`,
+        "d5.html": `<html></html>`,
+    }, { depth: 1 });
+
+    const expected = toMap({
+        "index.html": ["d2.html"],
+        "d2.html": undefined,
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Crawl depth 2", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="d2.html">link</a></body></html>`,
+        "d2.html": `<html><body><a href="d3.html">link</a></body></html>`,
+        "d3.html": `<html><body><a href="d4.html">link</a></body></html>`,
+        "d4.html": `<html><body><a href="d5.html">link</a></body></html>`,
+        "d5.html": `<html></html>`,
+    }, { depth: 2 });
+
+    const expected = toMap({
+        "index.html": ["d2.html"],
+        "d2.html": ["d3.html"],
+        "d3.html": undefined,
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Crawl depth 3", async () => {
+    const actual = await crawl({
+        "index.html": `<html><body><a href="d2.html">link</a></body></html>`,
+        "d2.html": `<html><body><a href="d3.html">link</a></body></html>`,
+        "d3.html": `<html><body><a href="d4.html">link</a></body></html>`,
+        "d4.html": `<html><body><a href="d5.html">link</a></body></html>`,
+        "d5.html": `<html></html>`,
+    }, { depth: 3 });
+
+    const expected = toMap({
+        "index.html": ["d2.html"],
+        "d2.html": ["d3.html"],
+        "d3.html": ["d4.html"],
+        "d4.html": undefined,
+    });
+
+    assertEquals(actual, expected);
+});

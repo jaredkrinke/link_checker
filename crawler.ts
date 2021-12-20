@@ -12,6 +12,7 @@ export interface CrawlOptions {
     externalLinks?: "ignore" | "check" | "follow";
     recordsIds?: boolean;
     maxConcurrency?: number;
+    depth?: number;
 }
 
 export interface ResourceLink {
@@ -35,6 +36,7 @@ export class CrawlError extends Error {
 
 interface Resource {
     url: URL;
+    depth: number;
     contentType?: string;
     internal: boolean;
     links?: ResourceLink[];
@@ -51,6 +53,7 @@ interface Context {
     checkExternalLinks: boolean;
     followExternalLinks: boolean;
     recordIds: boolean;
+    maxDepth: number;
     resources: Map<string, Resource>;
     taskQueue: TaskQueue<WorkItem>;
     parseErrors: Map<string, string>;
@@ -63,20 +66,23 @@ function assert(condition: any, message: string): asserts condition {
     }
 }
 
-function enqueueURLIfNeeded(urlWithFragment: URL, context: Context): void {
-    const url = getResourceIdentityFromURL(urlWithFragment);
-    const { resources } = context;
-    const { href } = url;
-    const internal = url.href.startsWith(context.base);
-    const shouldCheck = internal || context.checkExternalLinks;
-
-    if (shouldCheck && !resources.has(href)) {
-        resources.set(href, {
-            internal,
-            url,
-        });
-
-        context.taskQueue.enqueue({ href });
+function enqueueURLIfNeeded(urlWithFragment: URL, context: Context, depth: number): void {
+    if (depth <= context.maxDepth) {
+        const url = getResourceIdentityFromURL(urlWithFragment);
+        const { resources } = context;
+        const { href } = url;
+        const internal = url.href.startsWith(context.base);
+        const shouldCheck = internal || context.checkExternalLinks;
+    
+        if (shouldCheck && !resources.has(href)) {
+            resources.set(href, {
+                internal,
+                url,
+                depth,
+            });
+    
+            context.taskQueue.enqueue({ href });
+        }
     }
 }
 
@@ -114,8 +120,8 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
 
         const parse = contentTypeShort ? handlers.contentTypeParsers[contentTypeShort] : undefined;
 
-        // For parsable files, follow links for internal resource (or external, if requested)
-        const shouldParse = parse && (resource.internal || context.followExternalLinks);
+        // For parsable files, follow links for internal resource (or external, if requested), up to the maximum depth
+        const shouldParse = parse && (resource.internal || context.followExternalLinks) && (resource.depth < context.maxDepth);
         if (shouldParse) {
             let content;
             try {
@@ -143,7 +149,7 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
                             originalHrefString: href,
                         });
     
-                        enqueueURLIfNeeded(url, context);
+                        enqueueURLIfNeeded(url, context, resource.depth + 1);
                     }
                 }
 
@@ -184,6 +190,7 @@ export class Crawler {
             checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
             followExternalLinks: externalLinks === "follow",
             recordIds: (options?.recordsIds === true),
+            maxDepth: (options?.depth !== undefined) ? options.depth : Infinity,
 
             // State
             resources: new Map(),
@@ -193,7 +200,7 @@ export class Crawler {
 
         // Process resources
         for (const url of urls) {
-            enqueueURLIfNeeded(url, context);
+            enqueueURLIfNeeded(url, context, 0);
         }
 
         await context.taskQueue.drain();
