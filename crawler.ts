@@ -1,6 +1,8 @@
 import { ContentTypeParserCollection, getResourceIdentityFromURL } from "./shared.ts";
 import { TaskQueue } from "./task_queue.ts";
 
+export type { ContentTypeParserCollection };
+
 export interface CrawlHandlers {
     getContentTypeAsync: (url: URL) => Promise<string>;
     readTextAsync: (url: URL) => Promise<string>;
