@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.115.1/testing/asserts.ts";
+import { assertEquals, assertRejects } from "https://deno.land/std@0.115.1/testing/asserts.ts";
 import { CrawlOptions, Crawler, ResourceCollection, ResourceInfo } from "../crawler.ts";
 import type { ContentTypeParserCollection } from "../shared.ts";
 import { createHandlers, htmlType, otherType, toURL } from "./shared.ts";
@@ -75,6 +75,34 @@ Deno.test("Multiple entry points", async () => {
     });
 
     assertEquals(actual, expected);
+});
+
+Deno.test("Multiple entry points with different bases requires explicit base", async () => {
+    await assertRejects(() => crawl({
+        "index.html": "<html></html>",
+        "sub/other.html": "<html></html>",
+    }, {}, ["index.html", "sub/other.html"]));
+});
+
+Deno.test("Multiple entry points with different bases", async () => {
+    const actual = await crawl({
+        "index.html": "<html></html>",
+        "sub/other.html": "<html></html>",
+    }, { base: toURL(".") }, ["index.html", "sub/other.html"]);
+
+    const expected = toMap({
+        "index.html": [],
+        "sub/other.html": [],
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Entry points must be under base", async () => {
+    await assertRejects(() => crawl({
+        "index.html": "<html></html>",
+        "sub/other.html": "<html></html>",
+    }, { base: toURL("sub/") }, ["index.html", "sub/other.html"]));
 });
 
 Deno.test("One link", async () => {

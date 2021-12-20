@@ -171,6 +171,11 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
     }
 }
 
+function getBaseFromURL(url: URL): string {
+    const urlString = url.href;
+    return urlString.substring(0, urlString.lastIndexOf("/") + 1)
+}
+
 export class Crawler {
     constructor(private handlers: CrawlHandlers) {
     }
@@ -182,13 +187,33 @@ export class Crawler {
             return new Map();
         }
 
-        const urlString = urls[0].href; // Default to first URL's base
+        const base = options?.base?.href ?? getBaseFromURL(urls[0]);
+
+        // If there are multiple entry points and no base URL is provided, only proceed if all entry points have the same base
+        if (urls.length > 1 && !options?.base) {
+            for (const url of urls) {
+                const b = getBaseFromURL(url);
+                if (b !== base) {
+                    throw new CrawlError(`Base URL (options.base) must be specified when starting a crawl from multiple entry points that have different bases. Provided entry points:\n${urls.map(u => u.href).join("\n")}`);
+                }
+            }
+        }
+
+        // Entry points must be under base
+        if (options?.base) {
+            for (const url of urls) {
+                if (!url.href.startsWith(base)) {
+                    throw new CrawlError(`All entry points must be under base ("${base}"). Provided entry points:\n${urls.map(u => u.href).join("\n")}`);
+                }
+            }
+        }
+
         const externalLinks = options?.externalLinks ?? "ignore";
         const context: Context = {
             handlers: this.handlers,
 
             // Options
-            base: options?.base?.href ?? urlString.substring(0, urlString.lastIndexOf("/") + 1),
+            base,
             checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
             followExternalLinks: externalLinks === "follow",
             recordIds: (options?.recordsIds === true),
