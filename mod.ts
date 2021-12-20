@@ -1,5 +1,5 @@
-import { ContentTypeParserCollection, CrawlHandlers, Crawler as CrawlerCore } from "./crawler.ts";
-import { LinkChecker as LinkCheckerCore } from "./checker.ts";
+import { ContentTypeParserCollection, CrawlHandlers, CrawlerCore } from "./crawler.ts";
+import { LinkCheckerCore } from "./checker.ts";
 import { parse } from "./parse_html.ts";
 
 const htmlType = "text/html";

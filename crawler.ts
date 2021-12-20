@@ -176,7 +176,7 @@ function getBaseFromURL(url: URL): string {
     return urlString.substring(0, urlString.lastIndexOf("/") + 1)
 }
 
-export class Crawler {
+export class CrawlerCore {
     constructor(private handlers: CrawlHandlers) {
     }
 

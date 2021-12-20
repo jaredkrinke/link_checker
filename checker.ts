@@ -1,5 +1,5 @@
 import { getResourceIdentityFromURL } from "./shared.ts";
-import { CrawlHandlers, Crawler } from "./crawler.ts";
+import { CrawlHandlers, CrawlerCore } from "./crawler.ts";
 export type { CrawlHandlers };
 
 export interface Link {
@@ -19,11 +19,11 @@ export interface CheckLinksOptions {
     maxConcurrency?: number;
 }
 
-export class LinkChecker {
-    private crawler: Crawler;
+export class LinkCheckerCore {
+    private crawler: CrawlerCore;
 
     constructor(handlers: CrawlHandlers) {
-        this.crawler = new Crawler(handlers);
+        this.crawler = new CrawlerCore(handlers);
     }
 
     async checkLinksAsync(urlOrURLs: URL | URL[], options?: CheckLinksOptions): Promise<CheckLinksResult> {

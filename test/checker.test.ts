@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.115.1/testing/asserts.ts";
-import { LinkChecker, CheckLinksOptions, CheckLinksResult } from "../checker.ts";
+import { LinkCheckerCore, CheckLinksOptions, CheckLinksResult } from "../checker.ts";
 import { createHandlers, toURL } from "./shared.ts";
 
 interface TestLink {
@@ -18,7 +18,7 @@ function toList(a: TestLink[]): CheckLinksResult {
 }
 
 async function check(files: { [path: string]: string }, options?: CheckLinksOptions, entry = "index.html"): Promise<CheckLinksResult> {
-    const linkChecker = new LinkChecker(createHandlers(files));
+    const linkChecker = new LinkCheckerCore(createHandlers(files));
     return await linkChecker.checkLinksAsync(toURL(entry), options);
 }
 
