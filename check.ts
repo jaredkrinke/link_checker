@@ -1,35 +1,39 @@
 import { toFileUrl, resolve } from "https://deno.land/std@0.115.1/path/mod.ts";
 import { logUsage, processFlags } from "https://deno.land/x/flags_usage@2.0.0/mod.ts";
-import { CrawlerCore, createCrawlHandlers } from "./mod.ts";
+import { LinkCheckerCore, createCrawlHandlers } from "./mod.ts";
 
 const flagInfo = {
-    preamble: "Usage: deno run [--allow-read] [--allow-net] crawl.ts <entry point (path or URL)> [options]",
+    preamble: "Usage: deno run [--allow-read] [--allow-net] check.ts <entry point (path or URL)> [options]",
     alias: {
-        "external-links": "x",
+        "check-external-links": "x",
+        "check-fragments": "f",
         "concurrency": "c",
-        "depth": "d",
         "base-url": "b",
+        "verbose": "v",
     },
     description: {
-        "external-links": "Strategy for external links: ignore, check, follow",
+        "check-external-links": "Check external links; note: consider using \"-c N\" to speed this up",
+        "check-fragments": "Check URL fragment/hash for internal links",
         "concurrency": "Maximum concurrency",
-        "depth": "Maximum crawl depth",
         "base-url": "Base URL for the site (default: entry point parent)",
         "index-name": "Index name for file system directories",
+        "verbose": "Enable verbose logging",
     },
     argument: {
-        "external-links": "strategy",
         "base-url": "URL",
         "index-name": "name",
     },
     default: {
-        "external-links": "ignore",
+        "check-external-links": false,
+        "check-fragments": true,
         "concurrency": 1,
-        "depth": Infinity,
         "index-name": "index.html",
     },
+    boolean: [
+        "check-external-links",
+        "verbose",
+    ],
     string: [
-        "external-links",
         "base-url",
         "index-name",
     ],
@@ -55,23 +59,12 @@ try {
         throw `File system entry point must be a file`
     }
 
-    // External link handling
-    const externalLinkFlag = flags["external-links"];
-    let externalLinks: "ignore" | "check" | "follow" | undefined;
-    switch (externalLinkFlag) {
-        case "ignore":
-        case "check":
-        case "follow":
-            externalLinks = externalLinkFlag;
-            break;
-        
-        default:
-            throw `Unknown external link strategy: ${externalLinkFlag}`;
-    }
+    // External link, fragment checking
+    const checkExternalLinks = flags["check-external-links"];
+    const checkFragments = flags["check-fragments"];
 
-    // Max concurrency, depth
+    // Max concurrency
     const maxConcurrency = flags.concurrency;
-    const { depth } = flags;
 
     // Base URL
     let base: URL | undefined;
@@ -82,37 +75,37 @@ try {
     // Index
     const indexPath = flags["index-name"];
 
+    // Verbosity
+    const verbose = flags["verbose"];
+
     // Crawl
-    console.log(`Starting crawl from: ${entryPoint.href}
-    External link handling: ${externalLinks}
+    if (verbose) {
+        console.log(`Starting crawl from: ${entryPoint.href}
+    Check external links: ${checkExternalLinks}
     Max concurrency: ${maxConcurrency}
-    Max depth: ${depth}
     Base URL: ${base ? base.href : "(parent)"}
     Index path for file system URLs: ${indexPath}
     `);
+    }
 
     let errorCount = 0;
-    let queryCount = 0;
-    let downloadCount = 0;
-    const hostNames = new Set<string>();
     const urlToError = new Map<string, string>();
 
     const baseCrawlHandlers = createCrawlHandlers({ indexPath });
-    const crawler = new CrawlerCore({
+    const crawler = new LinkCheckerCore({
         getContentTypeAsync: async (url) => {
             try {
-                if (url.hostname) {
-                    hostNames.add(url.hostname);
-                }
-
                 const result = await baseCrawlHandlers.getContentTypeAsync(url);
-                console.log(`Query result: ${url.href} (${result})`);
-                ++queryCount;
+                if (verbose) {
+                    console.log(`Query result: ${url.href} (${result})`);
+                }
                 return result;
             } catch (error) {
-                console.log(`Query error: ${url.href} (${error.toString()})`);
-                ++errorCount;
-                urlToError.set(url.href, error.toString());
+                if (verbose) {
+                    console.log(`Query error: ${url.href} (${error.toString()})`);
+                    ++errorCount;
+                    urlToError.set(url.href, error.toString());
+                }
                 throw error;
             }
         },
@@ -120,13 +113,16 @@ try {
         readTextAsync: async (url) => {
             try {
                 const result = await baseCrawlHandlers.readTextAsync(url);
-                console.log(`Download result: ${url.href} (length: ${result.length})`);
-                ++downloadCount;
+                if (verbose) {
+                    console.log(`Download result: ${url.href} (length: ${result.length})`);
+                }
                 return result;
             } catch (error) {
-                console.log(`Download error: ${url.href} (${error.toString()})`);
-                ++errorCount;
-                urlToError.set(url.href, error.toString());
+                if (verbose) {
+                    console.log(`Download error: ${url.href} (${error.toString()})`);
+                    ++errorCount;
+                    urlToError.set(url.href, error.toString());
+                }
                 throw error;
             }
         },
@@ -134,23 +130,30 @@ try {
         contentTypeParsers: baseCrawlHandlers.contentTypeParsers,
     });
     
-    await crawler.crawlAsync(entryPoint, {
-        externalLinks,
+    const { brokenLinks } = await crawler.checkLinksAsync(entryPoint, {
+        checkExternalLinks,
+        checkFragments,
         maxConcurrency,
-        depth,
         base,
     });
 
-    console.log(`\nCrawl completed:
-    Resources successfully queried: ${queryCount}
-    Resources successfully retrieved: ${downloadCount}
+    if (verbose) {
+        console.log(`\nCrawl completed:
     Error count: ${errorCount}
-    
-    Host names queried: ${Array.from(hostNames.values()).sort().join(", ")}
+
     ${urlToError.size > 0 ? `
     Errors: ${Array.from(urlToError.keys()).map(url => `\n    ${url}: ${urlToError.get(url)}`).join("")}
     ` : ""}
     `);
+    }
+
+    if (brokenLinks.length > 0) {
+        console.log(`Broken links:
+${brokenLinks.map(l => `\n    ${l.source} -> ${l.href}${l.href !== l.target ? ` (${l.target})` : ""}`).join("")}
+    `);
+    } else {
+        console.log("No broken links detected");
+    }
 } catch (error) {
     console.log(`Error: ${error}`);
     logUsage(flagInfo);

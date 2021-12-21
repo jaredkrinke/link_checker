@@ -1,9 +1,9 @@
-import { ContentTypeParserCollection, CrawlHandlers, CrawlerCore } from "./crawler.ts";
-import { LinkCheckerCore } from "./checker.ts";
+import { ContentTypeParserCollection, CrawlHandlers, CrawlerCore, CrawlOptions, ResourceCollection, ResourceInfo } from "./crawler.ts";
+import { LinkCheckerCore, CheckLinksOptions, CheckLinksResult } from "./checker.ts";
 import { parse } from "./parse_html.ts";
 
-export { CrawlerCore };
-export type { ContentTypeParserCollection, CrawlHandlers };
+export { CrawlerCore, LinkCheckerCore };
+export type { ContentTypeParserCollection, CrawlHandlers, CrawlOptions, CheckLinksOptions, CheckLinksResult, ResourceCollection, ResourceInfo };
 
 const htmlType = "text/html";
 const otherType = "application/octet-stream";
