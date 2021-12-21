@@ -108,3 +108,13 @@ Deno.test("Invalid link anchors can be checked", async () => {
 
     assertEquals(actual, expected);
 });
+
+Deno.test("Non-link anchor", async () => {
+    const actual = await check({
+        "index.html": `<html><body><a id="nolink">no link</a></body></html>`,
+    }, { checkFragments: true });
+
+    const expected = toList([]);
+
+    assertEquals(actual, expected);
+});

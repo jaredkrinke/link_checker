@@ -25,7 +25,9 @@ export const parse: ContentTypeParser = (context) => {
                 const linkAttributeName = tagToLinkAttributeName[token.name];
                 if (linkAttributeName) {
                     const href = token.attributes[linkAttributeName];
-                    hrefs.push(href);
+                    if (href) {
+                        hrefs.push(href);
+                    }
                 }
             }
             break;
