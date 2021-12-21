@@ -7,12 +7,20 @@ const otherType = "application/octet-stream";
 const htmlPattern = /\.x?html?$/;
 const defaultIndexPath = "index.html";
 
-async function resolveFileURLAsync(url: URL, indexPath: string): Promise<URL> {
+interface CrawlHandlerSettings {
+    indexPath: string;
+}
+
+interface CrawlHandlerOptions {
+    indexPath?: string;
+}
+
+async function resolveFileURLAsync(url: URL, settings: CrawlHandlerSettings): Promise<URL> {
     let resolvedURL = url;
     let fileInfo = await Deno.stat(resolvedURL);
-    if (fileInfo.isDirectory && indexPath) {
+    if (fileInfo.isDirectory && settings.indexPath) {
         // This is a directory; redirect to index.html
-        resolvedURL = new URL(resolvedURL.href + indexPath);
+        resolvedURL = new URL(resolvedURL.href + settings.indexPath);
         fileInfo = await Deno.stat(resolvedURL);
     }
 
@@ -23,19 +31,15 @@ async function resolveFileURLAsync(url: URL, indexPath: string): Promise<URL> {
     }
 }
 
-export async function baseGetFileContentTypeAsync(url: URL, indexPath: string): Promise<string> {
+async function baseGetFileContentTypeAsync(url: URL, settings: CrawlHandlerSettings): Promise<string> {
     // Infer content type from file extension (.htm/.html/.xhtml are the only ones that are relevant here)
-    const resolvedURL = await resolveFileURLAsync(url, indexPath);
+    const resolvedURL = await resolveFileURLAsync(url, settings);
     return htmlPattern.test(resolvedURL.pathname) ? htmlType : otherType;
-}
-
-export function defaultGetFileContentTypeAsync(url: URL): Promise<string> {
-    return baseGetFileContentTypeAsync(url, defaultIndexPath);
 }
 
 const requestHeaders = { "Accept": "text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8" };
 
-export async function defaultGetHTTPContentTypeAsync(url: URL): Promise<string> {
+async function defaultGetHTTPContentTypeAsync(url: URL): Promise<string> {
     const response = await fetch(url, { method: "HEAD", headers: requestHeaders });
     if (!response.ok) {
         throw new Deno.errors.NotFound(url.href);
@@ -43,26 +47,18 @@ export async function defaultGetHTTPContentTypeAsync(url: URL): Promise<string> 
     return response.headers.get("content-type") || "";
 }
 
-export function baseGetContentTypeAsync(url: URL, indexPath: string): Promise<string> {
+function baseGetContentTypeAsync(url: URL, settings: CrawlHandlerSettings): Promise<string> {
     switch (url.protocol) {
-        case "file:": return baseGetFileContentTypeAsync(url, indexPath);
+        case "file:": return baseGetFileContentTypeAsync(url, settings);
         default: return defaultGetHTTPContentTypeAsync(url);
     }
 }
 
-export function defaultGetContentTypeAsync(url: URL): Promise<string> {
-    return baseGetContentTypeAsync(url, defaultIndexPath);
+async function baseReadFileTextAsync(url: URL, settings: CrawlHandlerSettings): Promise<string> {
+    return await Deno.readTextFile(await resolveFileURLAsync(url, settings));
 }
 
-export async function baseReadFileTextAsync(url: URL, indexPath: string): Promise<string> {
-    return await Deno.readTextFile(await resolveFileURLAsync(url, indexPath));
-}
-
-export function defaultReadFileTextAsync(url: URL): Promise<string> {
-    return baseReadFileTextAsync(url, defaultIndexPath);
-}
-
-export async function defaultReadHTTPTextAsync(url: URL): Promise<string> {
+async function defaultReadHTTPTextAsync(url: URL): Promise<string> {
     const response = await fetch(url, { headers: requestHeaders });
     if (!response.ok) {
         throw new Deno.errors.NotFound(url.href);
@@ -70,45 +66,41 @@ export async function defaultReadHTTPTextAsync(url: URL): Promise<string> {
     return await response.text();
 }
 
-export function baseReadTextAsync(url: URL, indexPath: string): Promise<string> {
+function baseReadTextAsync(url: URL, settings: CrawlHandlerSettings): Promise<string> {
     switch (url.protocol) {
-        case "file:": return baseReadFileTextAsync(url, indexPath);
+        case "file:": return baseReadFileTextAsync(url, settings);
         default: return defaultReadHTTPTextAsync(url);
     }
 }
 
-export function defaultReadTextAsync(url: URL): Promise<string> {
-    return baseReadTextAsync(url, defaultIndexPath);
-}
-
-export const defaultContentTypeParsers: ContentTypeParserCollection = {
+const defaultContentTypeParsers: ContentTypeParserCollection = {
     [htmlType]: parse,
     "application/xhtml+xml": parse,
     "application/xml": parse,
 };
 
-export const defaultCrawlHandlers: CrawlHandlers = {
-    getContentTypeAsync: defaultGetContentTypeAsync,
-    readTextAsync: defaultReadTextAsync,
-    contentTypeParsers: defaultContentTypeParsers,
-};
+export function createCrawlHandlers(options?: CrawlHandlerOptions): CrawlHandlers {
+    const settings: CrawlHandlerSettings = {
+        indexPath: options?.indexPath ?? defaultIndexPath,
+    };
 
-export function createCrawlHandlers(indexPath?: string): CrawlHandlers {
-    return (indexPath === undefined) ? defaultCrawlHandlers : {
-        getContentTypeAsync: (url) => baseGetContentTypeAsync(url, indexPath),
-        readTextAsync: (url) => baseReadTextAsync(url, indexPath),
+    return {
+        getContentTypeAsync: (url) => baseGetContentTypeAsync(url, settings),
+        readTextAsync: (url) => baseReadTextAsync(url, settings),
         contentTypeParsers: defaultContentTypeParsers,
     };
 }
 
+export const defaultCrawlHandlers = createCrawlHandlers({ indexPath: defaultIndexPath });
+
 export class Crawler extends CrawlerCore {
-    constructor(indexPath?: string) {
-        super(createCrawlHandlers(indexPath));
+    constructor(options?: CrawlHandlerOptions) {
+        super(createCrawlHandlers(options));
     }
 }
 
 export class LinkChecker extends LinkCheckerCore {
-    constructor(indexPath?: string) {
-        super(createCrawlHandlers(indexPath));
+    constructor(options?: CrawlHandlerOptions) {
+        super(createCrawlHandlers(options));
     }
 }
