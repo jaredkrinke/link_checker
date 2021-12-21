@@ -156,4 +156,3 @@ try {
     logUsage(flagInfo);
     Deno.exit(-1);
 }
-

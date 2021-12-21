@@ -2,6 +2,9 @@ import { ContentTypeParserCollection, CrawlHandlers, CrawlerCore } from "./crawl
 import { LinkCheckerCore } from "./checker.ts";
 import { parse } from "./parse_html.ts";
 
+export { CrawlerCore };
+export type { ContentTypeParserCollection, CrawlHandlers };
+
 const htmlType = "text/html";
 const otherType = "application/octet-stream";
 const htmlPattern = /\.x?html?$/;
