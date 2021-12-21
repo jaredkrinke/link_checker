@@ -85,7 +85,7 @@ Deno.test("External links can be checked", async () => {
 Deno.test("Valid link anchors can be checked", async () => {
     const actual = await check({
         "index.html": `<html><body><a href="#heading">heading</a><a href="other.html#something">link</a><a href="https://www.schemescape.com/deep.html#anchor">anchor</a><h1 id="heading">heading</h1></body></html>`,
-        "other.html": `<html><body><h1 id="something">heading</h1></body></html>`,
+        "other.html": `<html><body><h1 id="something">heading</h1><a href="#">script</a></body></html>`,
         "http://www.schemescape.com/deep.html": `<html><body>Not checked</body></html>`,
     }, { checkFragments: true });
 
