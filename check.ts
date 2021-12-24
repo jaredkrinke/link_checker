@@ -88,6 +88,7 @@ try {
     // Crawl
     if (verbose) {
         console.log(`Starting crawl from: ${entryPoint.href}
+    Check fragments: ${checkFragments}
     Check external links: ${checkExternalLinks}
     Max concurrency: ${maxConcurrency}
     Base URL: ${base ? base.href : "(parent)"}
