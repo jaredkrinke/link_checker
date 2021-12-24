@@ -1,6 +1,7 @@
 import { ContentTypeParserCollection, CrawlHandlers, CrawlerCore, CrawlOptions, ResourceCollection, ResourceInfo } from "./crawler.ts";
 import { LinkCheckerCore, CheckLinksOptions, CheckLinksResult } from "./checker.ts";
 import { parse } from "./parse_html.ts";
+export { version } from "./version.ts";
 
 export { CrawlerCore, LinkCheckerCore };
 export type { ContentTypeParserCollection, CrawlHandlers, CrawlOptions, CheckLinksOptions, CheckLinksResult, ResourceCollection, ResourceInfo };

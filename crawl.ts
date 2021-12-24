@@ -1,6 +1,6 @@
 import { toFileUrl, resolve } from "https://deno.land/std@0.115.1/path/mod.ts";
 import { logUsage, processFlags } from "https://deno.land/x/flags_usage@2.0.0/mod.ts";
-import { CrawlerCore, createCrawlHandlers } from "./mod.ts";
+import { CrawlerCore, createCrawlHandlers, version } from "./mod.ts";
 
 const flagInfo = {
     preamble: "Usage: deno run [--allow-read] [--allow-net] crawl.ts <entry point (path or URL)> [options]",
@@ -16,6 +16,7 @@ const flagInfo = {
         "depth": "Maximum crawl depth",
         "base-url": "Base URL for the site (default: entry point parent)",
         "index-name": "Index name for file system directories",
+        "version": "Display module version",
     },
     argument: {
         "external-links": "strategy",
@@ -28,6 +29,9 @@ const flagInfo = {
         "depth": Infinity,
         "index-name": "index.html",
     },
+    boolean: [
+        "version",
+    ],
     string: [
         "external-links",
         "base-url",
@@ -45,6 +49,12 @@ function toURL(pathOrURL: string): URL {
 
 const flags = processFlags(Deno.args, flagInfo);
 try {
+    // --version
+    if (flags.version) {
+        console.log(version);
+        Deno.exit(0);
+    }
+
     // Entry point
     if (flags._.length <= 0) {
         throw "No crawl entry point provided";
