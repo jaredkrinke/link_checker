@@ -40,11 +40,7 @@ export class TaskQueue<T> {
     async drain(): Promise<void> {
         while (this.queued.length > 0 || this.running.length > 0) {
             if (!this.tryPop()) {
-                try {
-                    await Promise.race(this.running);
-                } catch (_e) {
-                    // Rejection should be handled elsewhere
-                }
+                await Promise.race(this.running);
             }
         }
     }

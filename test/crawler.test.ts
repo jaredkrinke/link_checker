@@ -3,11 +3,14 @@ import { CrawlOptions, CrawlerCore, ResourceCollection, ResourceInfo } from "../
 import type { ContentTypeParserCollection } from "../shared.ts";
 import { createHandlers, htmlType, otherType, toURL } from "./shared.ts";
 
-function toMap(o: { [path: string]: string[] | true | false | undefined | ResourceInfo }): ResourceCollection {
+type ExtendedResourceInfo = ResourceInfo & { content?: string };
+type ExtendedResourceCollection = Map<string, ExtendedResourceInfo>;
+
+function toMap(o: { [path: string]: string[] | true | false | undefined | ExtendedResourceInfo }): ResourceCollection {
     const collection: ResourceCollection = new Map();
     for (const [key, value] of Object.entries(o)) {
         const url = toURL(key);
-        const info: Partial<ResourceInfo> = {};
+        const info: Partial<ExtendedResourceInfo> = {};
         if (value === true) {
             info.contentType = otherType;
         } else if (value === false) {
@@ -29,14 +32,27 @@ function toMap(o: { [path: string]: string[] | true | false | undefined | Resour
     return collection;
 }
 
-async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry: string | string[] = "index.html", contentTypeParsers?: ContentTypeParserCollection): Promise<ResourceCollection> {
+async function crawl(files: { [path: string]: string }, options?: CrawlOptions, entry: string | string[] = "index.html", contentTypeParsers?: ContentTypeParserCollection): Promise<ExtendedResourceCollection> {
     const handlers = createHandlers(files);
+    const writes: { [href: string]: string } = {};
+    handlers.writeTextAsync = (url: URL, content: string) => {
+        writes[url.href] = content;
+        return Promise.resolve();
+    };
+
     if (contentTypeParsers) {
         handlers.contentTypeParsers = contentTypeParsers;
     }
     
     const crawler = new CrawlerCore(handlers);
-    return await crawler.crawlAsync(typeof(entry) === "string" ? toURL(entry) : entry.map(e => toURL(e)), options);
+    const result = (await crawler.crawlAsync(typeof(entry) === "string" ? toURL(entry) : entry.map(e => toURL(e)), options)) as ExtendedResourceCollection;
+    // TODO: Map file to URL
+
+    for (const [href, content] of Object.entries(writes)) {
+        result.set(href, { content, ...result.get(href) });
+    }
+
+    return result;
 }
 
 Deno.test("No links", async () => {
@@ -433,6 +449,73 @@ Deno.test("Crawl depth 3", async () => {
         "d2.html": ["d3.html"],
         "d3.html": ["d4.html"],
         "d4.html": undefined,
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("Internal resources can be captured", async () => {
+    const indexContent = `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`;
+    const actual = await crawl({
+        "index.html": indexContent,
+        "http://www.schemescape.com/deep.html": `<html><body><a href="other.html">link</a></body></html>`,
+    }, { content: "saveInternal", externalLinks: "ignore" });
+
+    const expected = toMap({
+        "index.html": {
+            content: indexContent,
+            contentType: htmlType,
+            links: [
+                {
+                    canonicalURL: new URL("http://www.schemescape.com/deep.html"),
+                    originalHrefString: "http://www.schemescape.com/deep.html",
+                },
+                {
+                    canonicalURL: new URL("http://www.schemescape.com/broken.html"),
+                    originalHrefString: "http://www.schemescape.com/broken.html",
+                },
+            ],
+        },
+    });
+
+    assertEquals(actual, expected);
+});
+
+Deno.test("External resources can be captured", async () => {
+    const indexContent = `<html><body><a href="http://www.schemescape.com/deep.html">link</a><a href="http://www.schemescape.com/broken.html">link</a></body></html>`;
+    const deepContent = `<html><body><a href="other.html">link</a></body></html>`;
+    const actual = await crawl({
+        "index.html": indexContent,
+        "http://www.schemescape.com/deep.html": deepContent,
+    }, { content: "save", externalLinks: "follow" });
+
+    const expected = toMap({
+        "index.html": {
+            content: indexContent,
+            contentType: htmlType,
+            links: [
+                {
+                    canonicalURL: new URL("http://www.schemescape.com/deep.html"),
+                    originalHrefString: "http://www.schemescape.com/deep.html",
+                },
+                {
+                    canonicalURL: new URL("http://www.schemescape.com/broken.html"),
+                    originalHrefString: "http://www.schemescape.com/broken.html",
+                },
+            ],
+        },
+        "http://www.schemescape.com/deep.html": {
+            content: deepContent,
+            contentType: htmlType,
+            links: [
+                {
+                    canonicalURL: new URL("http://www.schemescape.com/other.html"),
+                    originalHrefString: "other.html",
+                },
+            ],
+        },
+        "http://www.schemescape.com/broken.html": false,
+        "http://www.schemescape.com/other.html": false,
     });
 
     assertEquals(actual, expected);

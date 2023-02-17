@@ -1,5 +1,7 @@
 import { toFileUrl, resolve } from "https://deno.land/std@0.115.1/path/mod.ts";
+import { dirname, join } from "https://deno.land/std@0.115.1/path/win32.ts";
 import { logUsage, processFlags } from "https://deno.land/x/flags_usage@2.0.0/mod.ts";
+import { getBaseFromURL } from "./crawler.ts";
 import { CrawlerCore, createCrawlHandlers, version } from "./mod.ts";
 
 const flagInfo = {
@@ -9,6 +11,7 @@ const flagInfo = {
         "concurrency": "c",
         "depth": "d",
         "base-url": "b",
+        "output": "o",
     },
     description: {
         "external-links": "Strategy for external links: ignore, check, follow",
@@ -16,12 +19,14 @@ const flagInfo = {
         "depth": "Maximum crawl depth",
         "base-url": "Base URL for the site (default: entry point parent)",
         "index-name": "Index name for file system directories",
+        "output": "Directory in which to save internal resources",
         "version": "Display module version",
     },
     argument: {
         "external-links": "strategy",
         "base-url": "URL",
         "index-name": "name",
+        "output": "directory",
     },
     default: {
         "external-links": "ignore",
@@ -36,6 +41,7 @@ const flagInfo = {
         "external-links",
         "base-url",
         "index-name",
+        "output",
     ],
 };
 
@@ -74,7 +80,7 @@ try {
         case "follow":
             externalLinks = externalLinkFlag;
             break;
-        
+            
         default:
             throw `Unknown external link strategy: ${externalLinkFlag}`;
     }
@@ -84,10 +90,10 @@ try {
     const { depth } = flags;
 
     // Base URL
-    let base: URL | undefined;
-    if (flags["base-url"]) {
-        base = toURL(flags["base-url"]);
-    }
+    const base = new URL(getBaseFromURL(entryPoint));
+
+    // Saving/output/capturing resources
+    const outputDirectory = flags.output;
 
     // Index
     const indexPath = flags["index-name"];
@@ -97,13 +103,15 @@ try {
     External link handling: ${externalLinks}
     Max concurrency: ${maxConcurrency}
     Max depth: ${depth}
-    Base URL: ${base ? base.href : "(parent)"}
+    Base URL: ${base}
     Index path for file system URLs: ${indexPath}
+    Output directory: ${outputDirectory ?? "(none)"}
     `);
 
     let errorCount = 0;
     let queryCount = 0;
     let downloadCount = 0;
+    let saveCount = 0;
     const hostNames = new Set<string>();
     const urlToError = new Map<string, string>();
 
@@ -140,6 +148,28 @@ try {
                 throw error;
             }
         },
+
+        writeTextAsync: outputDirectory ? async (url: URL, content: string): Promise<void> => {
+            const href = url.href;
+            if (href.startsWith(base.href)) {
+                const tail = href.substring(base.href.length);
+                let path = join(outputDirectory, tail);
+
+                // Append index path for directories
+                if (href[href.length - 1] === "/") {
+                    path += indexPath;
+                }
+
+                console.log(`Saving ${url.href} to ${path}`);
+
+                // First, ensure directory exists
+                const dir = dirname(path);
+                await Deno.mkdir(dir, { recursive: true });
+
+                await Deno.writeTextFile(path, content, { create: true });
+                saveCount++;
+            }
+        } : undefined,
         
         contentTypeParsers: baseCrawlHandlers.contentTypeParsers,
     });
@@ -149,11 +179,13 @@ try {
         maxConcurrency,
         depth,
         base,
+        content: outputDirectory ? "saveInternal" : "discard",
     });
 
     console.log(`\nCrawl completed:
     Resources successfully queried: ${queryCount}
     Resources successfully retrieved: ${downloadCount}
+    Resources saved: ${saveCount}
     Error count: ${errorCount}
     
     Host names queried: ${Array.from(hostNames.values()).sort().join(", ")}
@@ -163,6 +195,8 @@ try {
     `);
 } catch (error) {
     console.log(`Error: ${error}`);
-    logUsage(flagInfo);
+    if (typeof(error) === "string") {
+        logUsage(flagInfo);
+    }
     Deno.exit(-1);
 }

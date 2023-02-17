@@ -6,6 +6,7 @@ export type { ContentTypeParserCollection };
 export interface CrawlHandlers {
     getContentTypeAsync: (url: URL) => Promise<string>;
     readTextAsync: (url: URL) => Promise<string>;
+    writeTextAsync?: (url: URL, content: string) => Promise<void>;
     contentTypeParsers: ContentTypeParserCollection;
 }
 
@@ -15,6 +16,7 @@ export interface CrawlOptions {
     recordsIds?: boolean;
     maxConcurrency?: number;
     depth?: number;
+    content?: "discard" | "saveInternal" | "save";
 }
 
 export interface ResourceLink {
@@ -36,13 +38,10 @@ export class CrawlError extends Error {
     }
 }
 
-interface Resource {
+type Resource = ResourceInfo & {
     url: URL;
     depth: number;
-    contentType?: string;
     internal: boolean;
-    links?: ResourceLink[];
-    ids?: Set<string>;
 }
 
 interface WorkItem {
@@ -54,6 +53,8 @@ interface Context {
     base: string;
     checkExternalLinks: boolean;
     followExternalLinks: boolean;
+    saveInternalContents: boolean;
+    saveExternalContents: boolean;
     recordIds: boolean;
     maxDepth: number;
     resources: Map<string, Resource>;
@@ -100,10 +101,12 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
     assert(resource, "Attempted to process unknown href");
     assert(resource.url, "Attempted to process undefined URL")
 
+    const source = resource.url;
+    let contentToSave: string | undefined;
+
     try {
         // Ensure the item exists and check its content type
         const { handlers, recordIds } = context;
-        const source = resource.url;
         let contentTypeShort: string | undefined = undefined;
         try {
             resource.contentType = await handlers.getContentTypeAsync(source);
@@ -138,6 +141,11 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
             }
 
             if (content !== undefined) {
+                const shouldSaveContent = (resource.internal ? context.saveInternalContents : context.saveExternalContents);
+                if (shouldSaveContent) {
+                    contentToSave = content;
+                }
+
                 const base = resource.url;
                 const { hrefs, ids } = await parse({ content, recordIds });
 
@@ -169,9 +177,14 @@ async function processWorkItemAsync(item: WorkItem, context: Context): Promise<v
         // Note parsing errors, but continue processing
         context.parseErrors.set(resource.url.href, error.toString());
     }
+
+    // Save the content, if needed
+    if (contentToSave && context.handlers.writeTextAsync) {
+        await context.handlers.writeTextAsync(source, contentToSave);
+    }
 }
 
-function getBaseFromURL(url: URL): string {
+export function getBaseFromURL(url: URL): string {
     const urlString = url.href;
     return urlString.substring(0, urlString.lastIndexOf("/") + 1)
 }
@@ -208,7 +221,13 @@ export class CrawlerCore {
             }
         }
 
+        // Saving content requires supplying writeTextAsync handler
+        if ((options?.content === "save" || options?.content === "saveInternal") && !this.handlers.writeTextAsync) {
+            throw new CrawlError(`Saving content (content=${options?.content}) requires supplying a writeTextAsync handler`);
+        }
+
         const externalLinks = options?.externalLinks ?? "ignore";
+        const contents = options?.content ?? "discard";
         const context: Context = {
             handlers: this.handlers,
 
@@ -216,6 +235,8 @@ export class CrawlerCore {
             base,
             checkExternalLinks: (externalLinks === "check" || externalLinks === "follow"),
             followExternalLinks: externalLinks === "follow",
+            saveInternalContents: (contents === "saveInternal" || contents === "save"),
+            saveExternalContents: (contents === "save"),
             recordIds: (options?.recordsIds === true),
             maxDepth: (options?.depth !== undefined) ? options.depth : Infinity,
 
