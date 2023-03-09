@@ -1,4 +1,8 @@
 {
+  "tasks": {
+    "check": "deno run --allow-read --allow-net https://deno.land/x/link_checker/check.ts",
+    "crawl": "deno run --allow-read --allow-net https://deno.land/x/link_checker/crawl.ts"
+  },
   "imports": {
     "std/": "https://deno.land/std@0.178.0/",
     "flags_usage": "https://deno.land/x/flags_usage@2.0.0/mod.ts"
