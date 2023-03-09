@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "std/": "https://deno.land/std@0.178.0/",
+    "flags_usage": "https://deno.land/x/flags_usage@2.0.0/mod.ts"
+  }
+}
