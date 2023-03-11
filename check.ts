@@ -1,5 +1,4 @@
-import { toFileUrl, resolve } from "std/path/mod.ts";
-import { logUsage, processFlags } from "flags_usage";
+import { toFileUrl, resolve, logUsage, processFlags } from "./deps.ts";
 import { LinkCheckerCore, createCrawlHandlers, version } from "./mod.ts";
 
 const flagInfo = {

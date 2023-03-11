@@ -1,4 +1,4 @@
-import { assertEquals } from "std/testing/asserts.ts";
+import { assertEquals } from "./deps.ts";
 import { LinkCheckerCore, CheckLinksOptions, CheckLinksResult } from "../checker.ts";
 import { createHandlers, toURL } from "./shared.ts";
 

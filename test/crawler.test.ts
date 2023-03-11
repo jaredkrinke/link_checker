@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "std/testing/asserts.ts";
+import { assertEquals, assertRejects } from "./deps.ts";
 import { CrawlOptions, CrawlerCore, ResourceCollection, ResourceInfo } from "../crawler.ts";
 import type { ContentTypeParserCollection } from "../shared.ts";
 import { createHandlers, htmlType, otherType, toURL } from "./shared.ts";
