@@ -5,7 +5,7 @@ export {
   join,
   resolve,
   toFileUrl,
-} from "https://deno.land/std@0.178.0/path/mod.ts";
+} from "https://deno.land/std@0.179.0/path/mod.ts";
 export {
   logUsage,
   processFlags,
