@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "check": "deno run --allow-read --allow-net https://deno.land/x/link_checker/check.ts",
-    "crawl": "deno run --allow-read --allow-net https://deno.land/x/link_checker/crawl.ts"
+    "check": "deno run --allow-read --allow-net ./check.ts",
+    "crawl": "deno run --allow-read --allow-net ./crawl.ts"
   }
 }
