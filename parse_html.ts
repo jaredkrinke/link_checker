@@ -1,4 +1,4 @@
-import { Parser } from "https://deno.land/x/event_driven_html_parser@4.0.2/parser.ts";
+import { Parser } from "./deps.ts";
 import type { ContentTypeParser } from "./shared.ts";
 
 const tagToLinkAttributeName: { [tagName:string]: string } = {

@@ -1,0 +1,6 @@
+{
+  "tasks": {
+    "check": "deno run --allow-read --allow-net ./check.ts",
+    "crawl": "deno run --allow-read --allow-net ./crawl.ts"
+  }
+}

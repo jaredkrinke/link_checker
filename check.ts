@@ -1,5 +1,4 @@
-import { toFileUrl, resolve } from "https://deno.land/std@0.115.1/path/mod.ts";
-import { logUsage, processFlags } from "https://deno.land/x/flags_usage@2.0.0/mod.ts";
+import { toFileUrl, resolve, logUsage, processFlags } from "./deps.ts";
 import { LinkCheckerCore, createCrawlHandlers, version } from "./mod.ts";
 
 const flagInfo = {

@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "https://deno.land/std@0.115.1/testing/asserts.ts";
+import { assertEquals, assertRejects } from "./deps.ts";
 import { CrawlOptions, CrawlerCore, ResourceCollection, ResourceInfo } from "../crawler.ts";
 import type { ContentTypeParserCollection } from "../shared.ts";
 import { createHandlers, htmlType, otherType, toURL } from "./shared.ts";
